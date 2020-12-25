@@ -1,7 +1,67 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include "Variable.h"
 #include "Display_Manager.h"
+#include "Buttons.h"
+
+enum AppModeValues
+{
+  APP_NORMAL_MODE,
+  APP_MENU_MODE,
+  APP_PROCESS_MENU_CMD
+};
+enum ButtonPressMode
+{
+  NO_PRESS,
+  TRIGER_SHORT_PRESS,
+  TRIGER_LONG_PRESS,
+  UP,
+  DOWN,
+  LEFT,
+  RIGHT,
+  ENC_SHORT_PRESS,
+  ENC_LONG_PRESS
+};
+
+byte appMode = APP_NORMAL_MODE;
+byte BTN_ROT_SW = NO_PRESS;
+byte BTN_START_STOP = NO_PRESS;
+
+// lcd
+#define LCD_ADRESS 0x27
+#define LCD_ROWS 4
+#define LCD_COLS 20
+
+// relay motor pins:
+#define RL_MOTOR_CW 11
+#define RL_MOTOR_CCW 8
+#define RL_MOTOR_GEAR 10
+#define RL_MOTOR_START_STOP A0
+
+// pwm pin
+#define PWM_DAC 9
+
+// rotary encoder
+#define ROT_ENC_CLK 3
+#define ROT_ENC_DT 4
+#define ROT_ENC_SW 6
+
+// PRZYCISK START/STOP
+#define BTN_START_STOP 7
+
+// MOTOR INC ENCODER
+#define MOTOR_ENCODER 2
+#define LED 13
+
+// MAX VARIABLE
+#define MAX_VARIABLES 6
+
+LiquidCrystal_I2C lcd(LCD_ADRESS, LCD_ROWS, LCD_COLS);
+
+Buttons BT_START_STOP(BTN_START_STOP);
+Buttons BT_ROT_ENC_SW(ROT_ENC_SW);
+// #define _DEBUG
 
 void encoderISR();
 void counter();
@@ -15,7 +75,7 @@ void formatDir();
 void formatInt();
 void triger();
 void formatPWM();
-void drawMainScreen();
+// void drawMainScreen();
 void drawMenu();
 void handleCW();
 void handleCCW();
@@ -23,394 +83,47 @@ void handleOK();
 int getEncPos();
 int readRotEnc();
 
-LiquidCrystal_I2C lcd(0x27, 20, 4);
-
-// DEKLARACJA PINÓW I/O
-const byte encoderPin = 2; // pin kontrolera prędkości
-const byte CLK = 3;        // pin zegarowy enkodera obrotowego
-const byte DT = 4;         // pin kierunku enkodera obrotowego
-const byte dacPin = 9;
-const byte SW = 6;             // pin przycisku na enkoderze obrotowym
-const byte btn_START_STOP = 7; // pin przycisku start/stop na panelu przednim
-const byte obrLEWE = 8;        // pin przekaźnika dla załączenia obrotów lewych
-const byte obrPRAWE = 11;      // pin przekaźnika dla załączenia obrotów prawych
-const byte GEAR = 10;          // pin przekaźnika dla załączenia 2 biegu silnika
-#define RELAY_START_STOP A0
-
 // DEKLARACJA ZMIENNYCH przerwań
 volatile byte readPulses; // liczba pulsów enkodera prędkości
 byte copyPulses;
-volatile char rotEncPos;      // pozycja enkodera obrotowego
-volatile bool rotEncIsChange; // pozycja enkodera obrotowego
-char copyRotEncPos;
-
+volatile uint8_t master_count;
 unsigned long timeold; // ostatni czas odczytu prędkości
 unsigned long timenow; //  czas odczytu prędkości
 
 const byte PPR = 50;                     // liczba rowków na tarczy enkodera prędkości
 const unsigned int rpmUpdateTime = 1000; // czas odświeżania obrotów
 
-//przyciski
-unsigned long buttonTimer = 0;
-unsigned int longPressTime = 250;
-boolean TurnDetected = false;
+#define testDT ((PIND >> ROT_ENC_DT) & 1)
+#define testSTART_STOP ((PIND >> BTN_START_STOP) & 1)
+#define testSW ((PIND >> ROT_ENC_SW) & 1)
 
-boolean buttonActive = false;
-boolean longPressActive = false;
+//Parametry:
 
-#define testDT ((PIND >> DT) & 1)
-#define testSTART_STOP ((PIND >> btn_START_STOP) & 1)
-#define testSW ((PIND >> SW) & 1)
-
-//Parametry menu:
-byte CURRENT_MENU_POS;
-byte LAST_MENU_POS;
-byte CURRENT_MENU_LEVEL;
-byte LAST_MENU_LEVEL;
-
-bool MENU_IS_ON;
-byte HOME_SCREEN_CURSOR_POSITION;
-
-unsigned long BUTTON_LAST_PRESS_TIME;
-unsigned int BACK_TO_MAIN_SCREEN_TIME;
-
-int MENU_SIZE;
-bool MENU_IN_LOWER_LEVEL;
-int TEMP_VAL;
-
-struct MOTOR_STATE
-{
-  String label;
-  int digitData;
-  int dataPos;
-  bool printData;
-};
-
-struct PARAMETER
-{
-  String label;
-  int minVal;
-  int maxVal;
-  int currentVal;
-  int incVal;
-  void (*handler)();
-};
-
-struct MOTOR_SETTINGS
-{
-  String label;
-  int minVal;
-  int maxVal;
-  int currentVal;
-  int incVal;
-  void (*handler)();
-};
-
-typedef enum
-{
-  CW,
-  CCW,
-  OK,
-  NONE
-} ENUM_BUTTON;
-
-ENUM_BUTTON pressedButton;
-
-int readRotEnc()
-{
-  Serial.print("read rot enc");
-  Serial.println();
-
-  detachInterrupt(1);
-  copyRotEncPos = rotEncPos;
-  rotEncPos = 0;
-  attachInterrupt(1, encoderISR, FALLING);
-  int returnData;
-  Serial.print("copy rot enc");
-  Serial.print((int)copyRotEncPos);
-  Serial.println();
-  if ((bool)copyRotEncPos)
-  {
-    if ((int)copyRotEncPos > 0)
-    {
-      returnData = 0;
-      // IncRotEnc(copyRotEncPos);
-    }
-    else if ((int)copyRotEncPos < 0)
-    {
-      returnData = 1;
-      // DecRotEnc((copyRotEncPos * (-1)));
-    }
-  }
-  else
-  {
-    returnData = 3;
-  }
-
-  return returnData;
-}
-
-void IncRotEnc(int incVal)
-{
-
-  Serial.print("inc rot enc");
-  Serial.println();
-
-  if (CURRENT_MENU_LEVEL == 0)
-  {
-  }
-  else if (CURRENT_MENU_LEVEL == 1)
-  {
-    for (int i = 0; i < incVal; i++)
-    {
-      handleCW();
-    }
-    copyRotEncPos = 0;
-  }
-}
-void DecRotEnc(int decVal)
-{
-  Serial.print("dec rot enc");
-  Serial.println();
-
-  if (CURRENT_MENU_LEVEL == 0)
-  {
-  }
-  else if (CURRENT_MENU_LEVEL == 1)
-  {
-    for (size_t i = 0; i < decVal; i++)
-    {
-      handleCCW();
-    }
-    copyRotEncPos = 0;
-  }
-}
-
-void Display_Manage()
-{
-  Serial.print("display manage");
-  Serial.println();
-
-  if (LAST_MENU_LEVEL != CURRENT_MENU_LEVEL)
-  {
-    if (CURRENT_MENU_LEVEL == 0)
-    {
-      drawMainScreen();
-    }
-    LAST_MENU_LEVEL = CURRENT_MENU_LEVEL;
-  }
-  if (CURRENT_MENU_LEVEL == 1)
-  {
-    drawMenu();
-  }
-  Serial.print("LAST_MENU_POS");
-  Serial.print(LAST_MENU_POS);
-  Serial.print("currentScreen");
-  Serial.print(CURRENT_MENU_LEVEL);
-  Serial.println();
-}
-void drawMainScreen()
-{
-  lcd.clear();
-  lcd.print("menu glowne");
-}
-void drawMenu()
-{
-  //  switch (pressedButton)
-  //   {
-  //   case 0:
-  //     IncRotEnc(copyRotEncPos);
-  //     break;
-  //   case 1:
-  //     DecRotEnc(copyRotEncPos);
-  //     break;
-  //   case 3:
-  //     return;
-  //     break;
-  //   }
-
-  lcd.clear();
-  if (MENU_IN_LOWER_LEVEL)
-  {
-    lcd.print(SETTINGS[CURRENT_MENU_POS].label);
-    lcd.setCursor(0, 1);
-    lcd.print("> ");
-
-    if (SETTINGS[CURRENT_MENU_POS].handler != NULL)
-    {
-      (*(SETTINGS[CURRENT_MENU_POS].handler))();
-    }
-    else
-    {
-      lcd.print(TEMP_VAL);
-    }
-  }
-  else
-  {
-    lcd.print("> Ustawienia --");
-    lcd.setCursor(0, 1);
-    lcd.print("> ");
-
-    lcd.print(SETTINGS[CURRENT_MENU_POS].label);
-  }
-}
-
-void ButtonSW()
-{
-  Serial.print("button sw");
-  Serial.println();
-
-  if (digitalRead(SW) == HIGH)
-  {
-    Serial.print("button sw - high");
-    Serial.println();
-    if (buttonActive == false)
-    {
-
-      buttonActive = true;
-      buttonTimer = millis();
-    }
-
-    if ((millis() - buttonTimer > longPressTime) && (longPressActive == false))
-    {
-
-      longPressActive = true;
-      Serial.print("go to button long action");
-      Serial.println();
-
-      buttonLongAction();
-    }
-  }
-  else
-  {
-    if (buttonActive == true)
-    {
-      if (longPressActive == true)
-      {
-        longPressActive = false;
-      }
-      else
-      {
-        Serial.print("go to button short action");
-        Serial.println();
-        buttonShortAction();
-      }
-      buttonActive = false;
-    }
-  }
-}
-
-void buttonShortAction()
-{
-  Serial.print("btn short action");
-  Serial.println();
-  if (CURRENT_MENU_LEVEL == 0)
-  {
-    HOME_SCREEN_CURSOR_POSITION++;
-    if (HOME_SCREEN_CURSOR_POSITION > 1)
-    {
-      HOME_SCREEN_CURSOR_POSITION = 0;
-    }
-  }
-  else if (CURRENT_MENU_LEVEL == 1)
-  {
-    handleOK();
-  }
-}
-
-void handleCW()
-{
-  Serial.print("CW");
-  Serial.println();
-  if (MENU_IN_LOWER_LEVEL)
-  {
-    TEMP_VAL++;
-    delay(50);
-    if (TEMP_VAL > SETTINGS[CURRENT_MENU_POS].maxVal)
-      TEMP_VAL = SETTINGS[CURRENT_MENU_POS].maxVal;
-  }
-  else
-  {
-    CURRENT_MENU_POS = (CURRENT_MENU_POS + 1) % MENU_SIZE;
-  }
-}
-
-void handleCCW()
-{
-  Serial.print("handle ccw");
-  Serial.println();
-  if (MENU_IN_LOWER_LEVEL)
-  {
-    TEMP_VAL--;
-    delay(50);
-    if (TEMP_VAL < SETTINGS[CURRENT_MENU_POS].minVal)
-      TEMP_VAL = SETTINGS[CURRENT_MENU_POS].minVal;
-  }
-  else
-  {
-    CURRENT_MENU_POS--;
-    if (CURRENT_MENU_POS < 0)
-      CURRENT_MENU_POS = MENU_SIZE - 1;
-  }
-}
-
-void handleBack()
-{
-  //    if (MENU_IN_LOWER_LEVEL)
-  //    {
-  //        MENU_IN_LOWER_LEVEL = false;
-  //    }
-}
-
-void handleOK()
-{
-  Serial.print("handle ok");
-  Serial.println();
-  if (SETTINGS[CURRENT_MENU_POS].handler != NULL && SETTINGS[CURRENT_MENU_POS].maxVal <= SETTINGS[CURRENT_MENU_POS].minVal)
-  {
-    (*(SETTINGS[CURRENT_MENU_POS].handler))();
-    return;
-  }
-  if (MENU_IN_LOWER_LEVEL)
-  {
-    SETTINGS[CURRENT_MENU_POS].currentVal = TEMP_VAL;
-    MENU_IN_LOWER_LEVEL = false;
-  }
-  else
-  {
-    TEMP_VAL = SETTINGS[CURRENT_MENU_POS].currentVal;
-    MENU_IN_LOWER_LEVEL = true;
-  }
-}
-
-void buttonLongAction()
-{
-  Serial.print("buttonLongAction");
-  Serial.println();
-  CURRENT_MENU_LEVEL++;
-  if (CURRENT_MENU_LEVEL > 1)
-  {
-    CURRENT_MENU_LEVEL = 0;
-  }
-}
+const byte MAX_PARAM = 5;
+parameterStruct Parameters[MAX_PARAM];
 
 void counter()
 {
   //Update count
   readPulses++;
 }
-void encoderISR()
+void read_rotary()
 {
   if (testDT)
-  {
-    rotEncPos--;
-  }
+    master_count++;
   else
-  {
-    rotEncPos++;
-  }
+    master_count--;
 };
-
+uint8_t EncRead()
+{
+  return master_count;
+};
+void EncWrite(uint8_t addVal)
+{
+  noInterrupts();
+  master_count += addVal;
+  interrupts();
+};
 void formatUlamki()
 {
 }
@@ -426,72 +139,45 @@ void triger()
 void formatPWM()
 {
 }
+Display_ManagerClass Display(&lcd, &Parameters[0], &MAX_PARAM);
 
 void setup()
 {
-  MOTOR_STATE MOTOR_STATE_DATA[6];
-  MOTOR_STATE *MOTOR_STATE_DATA_ptrs[6];
-  PARAMETER SETTINGS[7];
-  PARAMETER *SETTINGS_ptrs[7];
-  MOTOR_SETTINGS MOTOR_PARAMETER[3];
-  MOTOR_SETTINGS *MOTOR_PARAMETER_ptrs[3];
+  // Ustawienie pinów IO
+  pinMode(MOTOR_ENCODER, INPUT);
+  pinMode(ROT_ENC_CLK, INPUT);
+  pinMode(ROT_ENC_DT, INPUT);
 
-  MOTOR_STATE_DATA[0] = {"MOTOR STOP          ", 0, 0, 0};
-  MOTOR_STATE_DATA[1] = {"PAUSE BEFORE        ", 0, 0, 0};
-  MOTOR_STATE_DATA[2] = {"FADE IN             ", 0, 0, 0};
-  MOTOR_STATE_DATA[3] = {"OBROTY W PRAWO      ", 0, 0, 0};
-  MOTOR_STATE_DATA[4] = {"OBROTY W LEWO       ", 0, 0, 0};
-  MOTOR_STATE_DATA[5] = {"FADE OUT            ", 0, 0, 0};
+  // pinMode(BTN_START_STOP, INPUT);
+  // pinMode(ROT_ENC_SW, INPUT);
+  // pinMode(PWM_DAC, OUTPUT);
+  // pinMode(RL_MOTOR_GEAR, OUTPUT);
+  // pinMode(RL_MOTOR_CW, OUTPUT);
+  // pinMode(RL_MOTOR_CCW, OUTPUT);
+  // pinMode(RL_MOTOR_START_STOP, OUTPUT);
+  pinMode(LED, OUTPUT);
 
-  SETTINGS[0] = {"PREDKOSC", 0, 1000, 1, 1, formatUlamki};
-  SETTINGS[1] = {"SREDNICA", 1, 250, 1, 1, formatInt};
-  SETTINGS[2] = {"KIERUNEK OBR", 0, 1, 1, 1, formatDir};
-  SETTINGS[3] = {"PAUZA PRZED", 0, 5000, 10, 1, formatInt};
-  SETTINGS[4] = {"CZAS ROZPEDU", 0, 5000, 1, 1, formatInt};
-  SETTINGS[5] = {"CZAS ZWALNIANIA", 0, 5000, 1, 1, formatInt};
-  SETTINGS[6] = {"WYZWALACZ", 0, 1, 1, 1, triger};
-
-  for (int i = 0; i < 7; i++)
-  {
-    SETTINGS_ptrs[i] = &SETTINGS[i];
-  }
-
-  MOTOR_PARAMETER[0] = {"BIEG-1", 0, 1000, 0, 1, formatUlamki};
-  MOTOR_PARAMETER[1] = {"BIEG-2", 0, 1000, 0, 1, formatUlamki};
-  MOTOR_PARAMETER[2] = {"PWM", 0, 1023, 0, 1, formatInt};
-  for (int i = 0; i < 3; i++)
-  {
-    MOTOR_PARAMETER_ptrs[i] = &MOTOR_PARAMETER[i];
-  }
   Serial.begin(115200);
 
   attachInterrupt(0, counter, FALLING);
-  attachInterrupt(1, encoderISR, FALLING);
-  Display_Manager.init(&lcd);
+  attachInterrupt(1, read_rotary, CHANGE);
+
+  // Display_Manager.setStruct(&menu);
   // Display_Manager.drawMainScreen();
-  MENU_SIZE = sizeof(SETTINGS) / sizeof(PARAMETER);
+  // MENU_SIZE = sizeof(menu) / sizeof(menu[0]);
 
-  CURRENT_MENU_POS = 0;
-  LAST_MENU_POS = -1;
-
-  CURRENT_MENU_LEVEL = 0;
-  LAST_MENU_LEVEL = -1;
-
-  MENU_IS_ON = false;
-  HOME_SCREEN_CURSOR_POSITION = 0;
-
-  // put your setup code here, to run once:
+  void setCurrentMenuPos(byte & CURRENT_MENU_POS);
+  void setLastMenuPos(byte & CURRENT_MENU_POS);
+  void setCurrentMenuLevel(byte & CURRENT_MENU_LEVEL);
+  void setLastMenuLevel(byte & LAST_MENU_LEVEL);
+  void setMenuIsOn(bool &MENU_IS_ON);
+  void setHomeScreenCursorPos(byte & HOME_SCREEN_CURSOR_POSITION);
+  // Display_Manager.drawMainScreen(1, 2, 3, 4, 5);
+  // Display_Manager.bindVariables(&timeold);
 }
 
 void loop()
 {
-  // Serial.println("loop");
-  // Serial.println();
-  // Serial.println("-------------------------------");
-  // Serial.println();
 
-  // delay(100);
-  // readRotEnc();
-  // ButtonSW();
-  // Display_Manage();
+  // Display_Manager.cutText();
 }
