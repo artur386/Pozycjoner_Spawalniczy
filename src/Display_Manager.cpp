@@ -1,13 +1,17 @@
 #include "Display_Manager.h"
 
-Display_ManagerClass::Display_ManagerClass(LiquidCrystal_I2C *_lcd, parameterStruct *params, const byte *maxParam)
+Display_ManagerClass::Display_ManagerClass(){};
+void Display_ManagerClass::SetLcd(LiquidCrystal_I2C *_lcd)
 {
     lcd = _lcd;
     // lcd = new LiquidCrystal_I2C(0x27, LCD_ROWS, LCD_COLS); // inicjalizacja wyświetlacza lcd
+    lcd->init();
     lcd->clear(); // czyszczenie wyświetlacza lcd
     lcd->backlight();
     lcd->createChar(0, FI_CHAR);
-
+}
+void Display_ManagerClass::SetParam(parameterStruct *params, const byte *maxParam)
+{
     this->Parameters = params;
     this->MAX_PARAM = maxParam;
     // lcd->createChar(1, this->dash);
@@ -15,36 +19,7 @@ Display_ManagerClass::Display_ManagerClass(LiquidCrystal_I2C *_lcd, parameterStr
     this->LAST_DISPLAY_SCREEN = 127;
     this->DISPLAY_SCREEN = 0;
     this->QUICK_PARAM_NB = 0;
-}
-
-// void menuInit()
-// {
-//     menu = LcdMenu(LCD_ROWS, LCD_COLS);
-//     menu->passLcdWithMenu(this->lcd, mainMenu);
-// }
-
-void Display_ManagerClass::updateScreen()
-{
-    if (this->DISPLAY_SCREEN != this->LAST_DISPLAY_SCREEN)
-    {
-        this->DISPLAY_SCREEN = this->LAST_DISPLAY_SCREEN;
-        switch (this->DISPLAY_SCREEN)
-        {
-        case 0:
-            MENU_IS_ON = false;
-            drawMainScreen();
-            break;
-
-        default:
-            MENU_IS_ON = true;
-            drawMenu();
-            break;
-        }
-    }
-}
-
-// Declare the call back function
-void toggleBacklight();
+};
 
 void Display_ManagerClass::drawMenu()
 {
@@ -63,19 +38,11 @@ void Display_ManagerClass::drawMainScreen()
     lcd->setCursor(0, 3);
     lcd->print(F(" SET:"));
 }
-void Display_ManagerClass::UpdateStatus(byte status, bool ccw)
+void Display_ManagerClass::Update_MOT_Status(uint8_t ms)
 {
-    if (status == 4)
-    {
-        status = 5;
-    }
-    if (status == 3 && ccw == true)
-    {
-        status = 4;
-    }
 
     lcd->setCursor(6, 0);
-    switch (status)
+    switch (ms)
     {
     case 0:
         lcd->print(F("MOTOR STOP  "));
@@ -95,9 +62,16 @@ void Display_ManagerClass::UpdateStatus(byte status, bool ccw)
     case 5:
         lcd->print(F("SMOOTH STOP "));
         break;
+    case 6:
+        lcd->print(F("GO TO STOP "));
+        break;
     default:
         break;
     }
+}
+void Display_ManagerClass::BindMotorState(uint8_t *MotorSt)
+{
+    motorState = MotorSt;
 }
 void Display_ManagerClass::UpdateDiameterLcd(int diaVal)
 {

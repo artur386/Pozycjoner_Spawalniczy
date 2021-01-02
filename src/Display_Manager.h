@@ -15,7 +15,7 @@ protected:
 private:
     LiquidCrystal_I2C *lcd;
     parameterStruct *Parameters;
-    const uint8_t *MAX_PARAM;
+    const byte *MAX_PARAM;
 
     // custom char
     byte FI_CHAR[8] = {
@@ -47,7 +47,7 @@ private:
     unsigned long BUTTON_LAST_PRESS_TIME;
     unsigned int BACK_TO_MAIN_SCREEN_TIME;
 
-    byte *motorState;
+    uint8_t *motorState;
     unsigned int *pause_before_time;
     unsigned int *soft_start_time;
     unsigned int *soft_stop_time;
@@ -56,8 +56,12 @@ private:
 public:
     int *TEMP_VAL_PRT;
     //void init();
-    Display_ManagerClass(LiquidCrystal_I2C *lcd, parameterStruct *params, const byte *maxParam);
+    Display_ManagerClass();
     // void menuInit();
+
+    void SetLcd(LiquidCrystal_I2C *lcd);
+    void SetParam(parameterStruct *params, const byte *maxParam);
+    void BindMotorState(uint8_t *MotorSt);
     // void setStruct(struct MenuItem *_p_menu);
     void setTempVal(int *_tempVal);
     void setCurrentMenuPos(byte *CURRENT_MENU_POS);
@@ -66,7 +70,7 @@ public:
     void setLastMenuLevel(byte *LAST_MENU_LEVEL);
     void setMenuIsOn(bool *MENU_IS_ON);
     void setHomeScreenCursorPos(byte *HOME_SCREEN_CURSOR_POSITION);
-    void UpdateStatus(byte status, bool ccw);
+    void Update_MOT_Status(uint8_t ms);
     void UpdateDiameterLcd(int diaVal);
     void UpdateReadLcd(float readVal);
     void UpdateSetLcd(float setVal);
@@ -81,6 +85,6 @@ public:
     // void CreateCustomChar();
 };
 
-extern Display_ManagerClass Display_Manager;
+// extern Display_ManagerClass Display_Manager;
 
 #endif

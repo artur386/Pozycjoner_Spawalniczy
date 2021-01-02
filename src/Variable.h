@@ -4,7 +4,7 @@
 #include "Arduino.h"
 struct parameterStruct
 {
-    char *name[];
+    char *name[15];
     uint8_t Id;
     uint8_t minVal;
     uint16_t maxVal;

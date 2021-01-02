@@ -4,13 +4,14 @@
 // Motor(FastPWMdac &fastPWMdac) : _fastPWMdac(fastPWMdac)
 Motor::Motor(byte _rl_cw, byte _rl_ccw, byte _rl_gear, byte _rl_start_stop, byte _pwm_pin)
 {
-    rl_cw = _rl_cw;
-    rl_ccw = _rl_ccw;
-    rl_gear = _rl_gear;
-    pwm_pin = _pwm_pin;
+    this->rl_cw = _rl_cw;
+    this->rl_ccw = _rl_ccw;
+    this->rl_gear = _rl_gear;
+    this->rl_start_stop = _rl_start_stop;
+    this->pwm_pin = _pwm_pin;
 
     _fastPWMdac.init(pwm_pin, 10);
-    this->motorState = 0;
+    // this->Motor_Status = 0;
     this->softStartTIME = 0;
     this->smoothStopTIME = 0;
     this->pauseBeforeTIME = 0;
@@ -22,6 +23,8 @@ Motor::Motor(byte _rl_cw, byte _rl_ccw, byte _rl_gear, byte _rl_start_stop, byte
     digitalWrite(rl_ccw, LOW);
     pinMode(rl_gear, OUTPUT);
     digitalWrite(rl_gear, LOW);
+    pinMode(rl_start_stop, OUTPUT);
+    digitalWrite(rl_gear, LOW);
 }
 
 void Motor::SetSoftStartTime(int time)
@@ -29,6 +32,15 @@ void Motor::SetSoftStartTime(int time)
     softStartTIME = time;
 }
 
+void Motor::BindMotorState(uint8_t *MotorSt)
+{
+    Motor_Status = MotorSt;
+}
+
+uint8_t Motor::GetState()
+{
+    return *Motor_Status;
+}
 void Motor::SetSmoothStopTime(int time)
 {
     smoothStopTIME = time;
@@ -62,19 +74,19 @@ float Motor::MM_PER_SEC_to_M_PER_MIN(float _vc)
 
 void Motor::motorStart(bool dir)
 {
-    this->motorCcwDir = dir;
+    this->MOTOR_CCW_DIR = dir;
     this->motorStartOn = true;
 }
 void Motor::motorStartFunc()
 {
-    if (motorStartOn)
+    if (this->motorStartOn)
     {
-        if (motorState == MOTOR_STATE_STOP)
+        if (*Motor_Status == MT_STOP)
         {
-            motorState = MOTOR_STATE_PAUSE;
+            *Motor_Status = MT_PAUSE;
         }
 
-        if (motorState == MOTOR_STATE_PAUSE && (bool)pauseBeforeTIME)
+        if (*Motor_Status == MT_PAUSE && (bool)pauseBeforeTIME)
         {
             if (!pauseBeforeOn)
             {
@@ -92,16 +104,16 @@ void Motor::motorStartFunc()
                 {
                     timeLeft = 0;
                     pauseBeforeOn = false;
-                    motorState = MOTOR_STATE_SOFT_START;
+                    *Motor_Status = MT_SOFT_START;
                 }
             }
         }
         else
         {
-            motorState = MOTOR_STATE_SOFT_START;
+            *Motor_Status = MT_SOFT_START;
         }
 
-        if (motorState == MOTOR_STATE_SOFT_START && (bool)softStartTIME)
+        if (*Motor_Status == MT_SOFT_START && (bool)softStartTIME)
         {
             if (!softStartOn)
             {
@@ -124,12 +136,32 @@ void Motor::motorStartFunc()
                 }
                 else
                 {
-                    motorState = MOTOR_STATE_RUN;
+                    if (MOTOR_CCW_DIR)
+                    {
+                        *Motor_Status = MT_RUN_CCW;
+                    }
+                    else
+                    {
+                        *Motor_Status = MT_RUN_CW;
+                    }
+
                     softStartOn = false;
                 }
             }
         }
-        if (motorState == MOTOR_STATE_RUN)
+        else
+        {
+            if (MOTOR_CCW_DIR)
+            {
+                *Motor_Status = MT_RUN_CCW;
+            }
+            else
+            {
+                *Motor_Status = MT_RUN_CW;
+            }
+        }
+
+        if (*Motor_Status == MT_RUN_CW || *Motor_Status == MT_RUN_CCW)
         {
             OutputPWM_Signal(PWM_10BitSET);
             relayStart();
@@ -139,7 +171,7 @@ void Motor::motorStartFunc()
 }
 void Motor::motorRunFunc()
 {
-    if (motorState == MOTOR_STATE_RUN) // motor runing
+    if (*Motor_Status == MT_RUN_CW || *Motor_Status == MT_RUN_CCW) // motor runing
     {
         if (!motorRunOn)
         {
@@ -158,7 +190,7 @@ void Motor::motorRunFunc()
 }
 void Motor::motorGoStopFunc()
 {
-    if (motorState == MOTOR_STATE_SMOOTH_STOP) // fade down
+    if (*Motor_Status == MT_SMOOTH_STOP) // fade down
     {
         if (!smoothStopOn && (bool)smoothStopTIME)
         {
@@ -181,23 +213,27 @@ void Motor::motorGoStopFunc()
             }
             else
             {
-                motorState = MOTOR_STATE_TO_STOP;
+                *Motor_Status = MT_TURN_IT_OFF;
                 smoothStopOn = false;
             }
         }
+        else
+        {
+            *Motor_Status = MT_TURN_IT_OFF;
+        }
     }
 
-    if (motorState == MOTOR_STATE_TO_STOP)
+    if (*Motor_Status == MT_TURN_IT_OFF)
     {
-        motorStop();
-        motorState = MOTOR_STATE_STOP;
+        StopMotion();
+        *Motor_Status = MT_STOP;
     }
 }
 void Motor::motorManage()
 {
-    motorStartFunc();
-    motorRunFunc();
-    motorGoStopFunc();
+    this->motorStartFunc();
+    this->motorRunFunc();
+    this->motorGoStopFunc();
 }
 
 void Motor::OutputPWM_Signal(uint16_t _pwm)
@@ -227,14 +263,23 @@ void Motor::SET_PWM(int _pwm)
 }
 void Motor::motorStop()
 {
+    if (*Motor_Status == MT_RUN_CW || *Motor_Status == MT_RUN_CCW)
+    {
+        *Motor_Status = MT_SMOOTH_STOP;
+    }
+}
+
+void Motor::StopMotion()
+{
     this->PWM_10BitOUT = 0;
     relayStop();
 }
+
 void Motor::relayStart()
 {
     if (!motorRelayOn)
     {
-        if (motorCcwDir)
+        if (MOTOR_CCW_DIR)
         {
             digitalWrite(rl_cw, HIGH);
         }
@@ -250,7 +295,7 @@ void Motor::relayStop()
 {
     if (motorRelayOn)
     {
-        if (motorCcwDir)
+        if (MOTOR_CCW_DIR)
         {
             digitalWrite(rl_cw, LOW);
         }
@@ -258,6 +303,6 @@ void Motor::relayStop()
         {
             digitalWrite(rl_ccw, LOW);
         }
-        motorRelayOn = true;
+        motorRelayOn = false;
     }
 }
