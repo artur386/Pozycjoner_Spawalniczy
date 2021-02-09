@@ -11,7 +11,7 @@
 #include "Motor.h"
 #include <TimerOne.h>
 #include <Wire.h>
-
+#include "Parametr.h"
 /***********************************************************
  *            PROTOTYPES                                   *
  * ********************************************************/
@@ -71,9 +71,9 @@ bool PidOnOff;
 uint16_t open_loop_pwm;
 
 #define LED_ACCEPT_BLINK_TIME 100
-#define LED_ACCEPT_BLINK_CNT 3
+uint8_t LED_ACCEPT_BLINK_CNT;
 unsigned long LedAcceptBlinkLastTime;
-bool LedAcceptIsOn, LedAcceptFlag;
+bool LedAcceptIsOn, LedAcceptFlag, LedAcceptMode;
 uint8_t LedAcceptCnt;
 
 // Variables will change:
@@ -142,33 +142,6 @@ BigFont fontPrinter;
  * ************************************************/
 void GetParam()
 {
-  paramSpeedMethod = enu[1];
-  // DBG(paramSpeedMethod);
-  paramDIA = values[3];
-  // DBG(paramDIA);
-  paramTimePause = values[5];
-  // DBG(paramTimePause);
-  paramTimeStart = values[6];
-  // DBG(paramTimeStart);
-  paramTimeStop = values[7];
-  // DBG(paramTimeStop);
-  paramRPM = GET_FLOAT_VAL(0);
-  // DBG(paramRPM);
-  paramRPS = GET_FLOAT_VAL(1);
-  // DBG(paramRPS);
-  paramMMSEC = GET_FLOAT_VAL(2);
-  // DBG(paramMMSEC);
-  paramGEAR = enu[0];
-  // DBG(paramGEAR);
-  paramPidOnOff = (bool)enu[2];
-  // DBG(paramPidOnOff);
-  paramKp = GET_FLOAT_VAL(8);
-  // DBG(paramKp);
-  paramKi = GET_FLOAT_VAL(9);
-  // DBG(paramKi);
-  paramKd = GET_FLOAT_VAL(10);
-  // DBG(paramKd);
-  paramScreenSaver = values[4] * 1000;
 }
 
 void focusInc()
@@ -196,14 +169,13 @@ void tach_count()
 
 uint16_t CalcPWM(float rpm)
 {
-
   if (paramGEAR == 1)
   {
-    return (rpm - MinRPM_1stGear) * (MAX_PWM_VALUE - MIN_PWM_VALUE) / (MaxRPM_1stGear - MinRPM_1stGear) + MIN_PWM_VALUE;
+    return map(rpm * 1000, MinRPM_1stGear * 1000, MaxRPM_1stGear * 1000, MIN_PWM_VALUE, MAX_PWM_VALUE);
   }
   else if (paramGEAR == 2)
   {
-    return (rpm - MinRPM_2stGear) * (MAX_PWM_VALUE - MIN_PWM_VALUE) / (MaxRPM_2stGear - MinRPM_2stGear) + MIN_PWM_VALUE;
+    return map(rpm * 1000, MinRPM_2stGear * 1000, MaxRPM_2stGear * 1000, MIN_PWM_VALUE, MAX_PWM_VALUE);
   }
 }
 
@@ -217,6 +189,14 @@ void LedAccept()
     LedAcceptCnt = 0;
     RED_LED_ON();
     GREEN_LED_OFF();
+    if (LedAcceptMode == 0)
+    {
+      LED_ACCEPT_BLINK_CNT = 3;
+    }
+    else if (LedAcceptMode == 1)
+    {
+      LED_ACCEPT_BLINK_CNT = 6;
+    }
   }
   if (LedAcceptIsOn)
   {
@@ -514,25 +494,24 @@ void WriteEEpromData()
 }
 void ReadEEpromData()
 {
+  // Odczyt ustawień z pamięci EEPROM
   EEPROM.get(EEPROM_START_ADRESS, values);
   EEPROM.get(sizeof(values), enu);
-  GetParam();
-  /*
-  for (size_t i = 0; i < 11; i++)
-  {
-    Serial.print("Read EEPROM val - ");
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(values[i]);
-  }
-  for (size_t i = 0; i < 3; i++)
-  {
-    Serial.print("Read EEPROM enum - ");
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(enu[i]);
-  }
-  */
+
+  paramSpeedMethod = enu[1];
+  paramDIA = values[3];
+  paramTimePause = values[5];
+  paramTimeStart = values[6];
+  paramTimeStop = values[7];
+  paramRPM = GET_FLOAT_VAL(0);
+  paramRPS = GET_FLOAT_VAL(1);
+  paramMMSEC = GET_FLOAT_VAL(2);
+  paramGEAR = enu[0];
+  paramPidOnOff = (bool)enu[2];
+  paramKp = GET_FLOAT_VAL(8);
+  paramKi = GET_FLOAT_VAL(9);
+  paramKd = GET_FLOAT_VAL(10);
+  paramScreenSaver = values[4] * 1000;
 }
 /********************************************************************************************
  * 
@@ -842,6 +821,7 @@ void appIdle()
     else if (ChceckBtn(BTN_SW_LONG))
     {
       LedAcceptFlag = true;
+      LedAcceptMode = 1;
       AppMode = APP_MENU_VIEW;
     }
     else if (ChceckBtn(BTN_SW_SHORT))
@@ -849,6 +829,7 @@ void appIdle()
       LedAcceptFlag = true;
       focusInc();
     }
+
     else if (ChceckBtn(BTN_START_STOP_LONG))
     {
       LedAcceptFlag = true;
@@ -874,7 +855,7 @@ void appIdle()
       DateTime now = rtc.now();
       char *timeStr = (char *)malloc(sizeof(char) * 8);
       sprintf(timeStr, "%d:%d:%d", now.hour(), now.minute(), now.second());
-      fontPrinter.WriteBigString(timeStr, 2, 1);
+      fontPrinter.WriteBigString(timeStr, 0, 1);
       free(timeStr);
       ScreenRefreshTime = millis();
     }
@@ -975,18 +956,6 @@ void FastParamChange(int mode)
 }
 void WriteParamToEEprom()
 {
-
-  // values[4] = int(paramScreenSaver * VAL_TBL__DIV(4));
-  // values[5] = int(paramTimePause * VAL_TBL__DIV(5));
-  // values[6] = int(paramTimeStart * VAL_TBL__DIV(6));
-  // values[7] = int(paramTimeStop * VAL_TBL__DIV(7));
-  // values[8] = int(paramKp * VAL_TBL__DIV(8));
-  // values[9] = int(paramKi * VAL_TBL__DIV(9));
-  // values[10] = int(paramKd * VAL_TBL__DIV(10));
-  // enu[0] = paramGEAR;
-  // enu[1] = paramSpeedMethod;
-  // enu[2] = (int)paramPidOnOff;
-  // if (WriteToEEprom_flag == true && (millis() - LastEEpromWriteTime) > EEpromWriteTime)
   if (WriteToEEprom_flag == true)
   {
     WriteToEEprom_flag = false;
