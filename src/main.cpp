@@ -1,49 +1,80 @@
 #include <Arduino.h>
+#include "BigFont.h"
+#include "RTClib.h"
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include "Variable.h"
-#include "Display_Manager.h"
-#include "Buttons.h"
-#include "Motor.h"
-#include "EnumTypes.h"
+#include <PID_v1.h>
 #include <EEPROM.h>
+#include "enums.h"
+#include "myMenu.h"
+#include "DisplayManager.h"
+#include "Motor.h"
+#include <TimerOne.h>
+#include <Wire.h>
+
+/***********************************************************
+ *            PROTOTYPES                                   *
+ * ********************************************************/
+void WriteEEpromData();
+void ReadEEpromData();
+void controlBtn();
+bool CheckAnyBtn();
+void ClearButton(uint8_t btn);
+bool ChceckBtn(uint8_t btn);
+void SetButton(uint8_t btn);
+void EncWrite(int8_t addVal);
+void read_rotary();
+void APP_MENU_MODE();
+void getpidparam();
+void appManage();
+void APP_MOTOR_MODE();
+void tach_interrupt();
+void appIdle();
+void FastParamChange(int mode);
+void WriteParamToEEprom();
+uint16_t CalcPWM(float rpm);
+void CheckFastParameterChange();
+/*************************************/
+
+byte BT_ST = 0x00000000;
 
 uint8_t AppMode;
 uint8_t LastAppMode;
 
-uint8_t MOTOR_STATE;
-uint8_t LAST_MOTOR_STATE;
+#define GET_INT_VARIABLE(X) values[x]
+#define GET_DIV_VARIABLE(x) pgm_read_word(&(val_table[x][2]))
+#define GET_FLOAT_VARIABLE(x) float(GET_INT_VARIABLE(x) / GET_DIV_VARIABLE(x))
+volatile int8_t master_count;
+unsigned long ScreenSaverTime, ScreenRefreshTime;
+bool ScreenSaverOn, ShowScreenSaver;
+unsigned long CONTROL_ROTARY_SW_press_time = millis();
+unsigned long CONTROL_START_STOP_press_time = millis();
+bool CONTROL_START_STOP_LONG_PRESS_DETECT = false;
+bool CONTROL_ROTARY_SW_LONG_PRESS_DETECT = false;
+bool CONTROL_ROTARY_SW_prev = HIGH;
+bool CONTROL_START_STOP_prev = LOW;
+bool WriteToEEprom_flag = false;
+unsigned long LastEEpromWriteTime = 0;
+// status pracy silnika
+uint8_t MOTOR_STATE, LAST_MOTOR_STATE;
+//kierunek obrotow silnika
 bool MOTOR_CCW_DIR = false;
+bool focus = false;
+int pwm;
+float ActualRPM;
 
-byte BTN_ROT_SW = NO_PRESS;
-byte BTN_START_STOP = NO_PRESS;
-unsigned long g_LCDML_CONTROL_button_press_time;
-bool g_LCDML_CONTROL_button_prev;
-// lcd
-#define LCD_ADRESS 0x27
-#define LCD_ROWS 4
-#define LCD_COLS 20
+// pid parameters:-
+double Setpoint, Input, Output;
 
-// relay motor pins:
-#define RL_MOTOR_CW 11
-#define RL_MOTOR_CCW 8
-#define RL_MOTOR_GEAR 10
-#define RL_MOTOR_START_STOP A0
+#define SAMPLE_TIME 100
+bool PidOnOff;
+uint16_t open_loop_pwm;
 
-// pwm pin
-#define PWM_DAC 9
-
-// rotary encoder
-#define ROT_ENC_CLK 3
-#define ROT_ENC_DT 4
-#define ROT_ENC_SW 6
-
-// PRZYCISK START/STOP
-#define BTN_START_STOP 7
-
-// MOTOR INC ENCODER
-#define MOTOR_ENCODER 2
-#define LED 13
+#define LED_ACCEPT_BLINK_TIME 100
+#define LED_ACCEPT_BLINK_CNT 3
+unsigned long LedAcceptBlinkLastTime;
+bool LedAcceptIsOn, LedAcceptFlag;
+uint8_t LedAcceptCnt;
 
 // Variables will change:
 uint8_t ledState = LOW;
@@ -51,573 +82,941 @@ unsigned long previousMillis = 0;
 const long interval = 1000;
 bool blinkStart = false;
 uint8_t blinkCount = 0;
+uint8_t cursorFocus = 0;
 
-float value = 0;
-float rev = 0;
-int rpm;
-int oldtime = 0;
-int time;
-void isr()
-{
-  rev++;
-}
+bool startFlag;
 
-uint8_t id[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-char *nazwa[10] = {"Srednica", "Predkosc", "Przerwa", "SoftStart", "SmoothStop", "PID", "Kp", "Ki", "Kd", "Back"};
-uint16_t minVal[10] = {
-    10,
-    1,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    1,
-    0};
-uint16_t maxVal[10] = {
-    300,
-    25,
-    5000,
-    5000,
-    5000,
-    1,
-    20,
-    20,
-    20,
-    0};
-uint16_t curVal[10] = {
-    10,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    1,
-    0};
-uint16_t incVal[10] = {
-    1,
-    0,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    1,
-    0};
-uint16_t fracVal[10] = {
-    1,
-    10,
-    100,
-    100,
-    100,
-    1,
-    1,
-    1,
-    1,
-    0};
-// void (*handle)()[10] = {
-//     printMM,
-//     printVC,
-//     printSEC,
-//     printSEC,
-//     printSEC,
-//     ON_OFF,
-//     NULL,
-//     NULL,
-//     NULL,
-//     goBACK}
+int values[11];
+uint8_t enu[3];
+
+//RPM
+volatile uint8_t ENC_STATE = 0;
+uint32_t isrTime = 500;
+double REAL_RPM, REAL_RPS;
+bool READ_RPM = false;
+
+// tachometer
+long lastUpdate = 0;                  // for timing display updates
+volatile long accumulator = 0;        // sum of last 8 revolution times
+volatile unsigned long startTime = 0; // start of revolution in microseconds
+volatile unsigned long revCount = 0;  // number of revolutions since last display update
+uint8_t averageCnt = 0, averageCntMax = 5;
+unsigned long revCountCopy = 0;                    // number of revolutions since last display update
+unsigned long revCountSmooth[5] = {0, 0, 0, 0, 0}; // number of revolutions since last display update
 
 // MAX VARIABLE
 uint16_t LAST_DIA;
+uint16_t CURR_DIA;
 uint16_t LAST_VC;
+uint16_t CURR_VC;
 uint16_t LAST_RPM;
-uint16_t REAL_RPM;
+uint16_t CURR_RPM;
 
-#define IsDiaChanged (LAST_DIA != curVal[0])
-#define IsVcChanged (LAST_VC != curVal[1])
-#define IsReadRpmChanged (LAST_RPM != REAL_RPM)
-
-LiquidCrystal_I2C lcd(LCD_ADRESS, LCD_COLS, LCD_ROWS);
-
-Buttons BT_START_STOP(BTN_START_STOP);
-Buttons BT_ROT_ENC_SW(ROT_ENC_SW);
-// #define _DEBUG
-
-void printMM();
-void printVC();
-void printSEC();
-void ON_OFF();
-void goBACK();
-void encoderISR();
-void counter();
-void buttonLongAction();
-void buttonShortAction();
-void ButtonSW();
-void DecRotEnc(int decVal);
-void IncRotEnc(int incVal);
-void formatUlamki();
-void formatDir();
-void formatInt();
-void triger();
-void formatPWM();
-// void drawMainScreen();
-void drawMenu();
-void handleCW();
-void handleCCW();
-void handleOK();
-int getEncPos();
-int readRotEnc();
-uint8_t readButtons();
-void blinkLed(uint8_t times);
-void SaveToEEPROM();
-
-// DEKLARACJA ZMIENNYCH przerwań
-volatile byte readPulses; // liczba pulsów enkodera prędkości
-byte copyPulses;
-volatile char master_count;
-unsigned long timeold; // ostatni czas odczytu prędkości
-unsigned long timenow; //  czas odczytu prędkości
-
-const byte PPR = 50;                     // liczba rowków na tarczy enkodera prędkości
-const unsigned int rpmUpdateTime = 1000; // czas odświeżania obrotów
+uint16_t setPWM, outPWM;
+LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 #define testDT ((PIND >> ROT_ENC_DT) & 1)
-#define testSTART_STOP ((PIND >> BTN_START_STOP) & 1)
-#define testSW ((PIND >> ROT_ENC_SW) & 1)
+#define BTN_START_STOP_TEST !((PIND >> BTN_START_STOP_PANEL) & 1)
+#define BTN_SW_ROTATY ((PIND >> ROT_ENC_SW) & 1)
 
-//Parametry:
+/* PARAMETRY MENU */
+double paramRPM, paramLastRPM, paramRPS, paramMMSEC;
+uint32_t paramDIA;
+uint8_t paramGEAR;
+uint32_t paramTimePause, paramTimeStart, paramTimeStop;
+double paramKp, paramKi, paramKd;
+uint8_t paramSpeedMethod;
+bool paramPidOnOff;
+uint16_t paramScreenSaver;
 
-const byte MAX_PARAM = 5;
-parameterStruct Parameters[MAX_PARAM];
+// define object :-
+PID myPID(&Input, &Output, &Setpoint, paramKp, paramKi, paramKd, DIRECT);
+DisplayManager Display(&lcd, &MOTOR_STATE);
+Motor motor(RL_MOTOR_CW, RL_MOTOR_CCW, RL_MOTOR_GEAR, RL_MOTOR_START_STOP, PWM_DAC);
+myMenu menu(&lcd, &values[0], &enu[0], &BT_ST, &AppMode);
+RTC_DS3231 rtc;
+BigFont fontPrinter;
 
-void counter()
+/***************************************************
+ * functions
+ * ************************************************/
+void GetParam()
 {
-  //Update count
-  readPulses++;
+  paramSpeedMethod = enu[1];
+  // DBG(paramSpeedMethod);
+  paramDIA = values[3];
+  // DBG(paramDIA);
+  paramTimePause = values[5];
+  // DBG(paramTimePause);
+  paramTimeStart = values[6];
+  // DBG(paramTimeStart);
+  paramTimeStop = values[7];
+  // DBG(paramTimeStop);
+  paramRPM = GET_FLOAT_VAL(0);
+  // DBG(paramRPM);
+  paramRPS = GET_FLOAT_VAL(1);
+  // DBG(paramRPS);
+  paramMMSEC = GET_FLOAT_VAL(2);
+  // DBG(paramMMSEC);
+  paramGEAR = enu[0];
+  // DBG(paramGEAR);
+  paramPidOnOff = (bool)enu[2];
+  // DBG(paramPidOnOff);
+  paramKp = GET_FLOAT_VAL(8);
+  // DBG(paramKp);
+  paramKi = GET_FLOAT_VAL(9);
+  // DBG(paramKi);
+  paramKd = GET_FLOAT_VAL(10);
+  // DBG(paramKd);
+  paramScreenSaver = values[4] * 1000;
 }
+
+void focusInc()
+{
+  focus = !focus;
+  Display.updateScreen();
+}
+
+void tach_interrupt()
+{
+  // calculate the microseconds since the last interrupt
+  long usNow = micros();
+  long elapsed = usNow - startTime;
+  startTime = usNow; // reset the clock
+
+  // Accumulate the last 8 interrupt intervals
+  accumulator -= (accumulator >> 3);
+  accumulator += elapsed;
+  revCount++;
+}
+void tach_count()
+{
+  revCount++;
+}
+
+uint16_t CalcPWM(float rpm)
+{
+
+  if (paramGEAR == 1)
+  {
+    return (rpm - MinRPM_1stGear) * (MAX_PWM_VALUE - MIN_PWM_VALUE) / (MaxRPM_1stGear - MinRPM_1stGear) + MIN_PWM_VALUE;
+  }
+  else if (paramGEAR == 2)
+  {
+    return (rpm - MinRPM_2stGear) * (MAX_PWM_VALUE - MIN_PWM_VALUE) / (MaxRPM_2stGear - MinRPM_2stGear) + MIN_PWM_VALUE;
+  }
+}
+
+void LedAccept()
+{
+  if (LedAcceptFlag)
+  {
+    LedAcceptFlag = false;
+    LedAcceptIsOn = true;
+    LedAcceptBlinkLastTime = millis();
+    LedAcceptCnt = 0;
+    RED_LED_ON();
+    GREEN_LED_OFF();
+  }
+  if (LedAcceptIsOn)
+  {
+    if ((millis() - LedAcceptBlinkLastTime) >= LED_ACCEPT_BLINK_TIME)
+    {
+      /* code */
+      RED_LED_OFF();
+      digitalWrite(GLED, (LedAcceptCnt % 2));
+      LedAcceptBlinkLastTime = millis();
+      LedAcceptCnt++;
+      if (LedAcceptCnt == LED_ACCEPT_BLINK_CNT)
+      {
+        RED_LED_ON();
+        GREEN_LED_OFF();
+        LedAcceptIsOn = false;
+      }
+    }
+  }
+}
+void rpmCalc()
+{
+  switch (ENC_STATE)
+  {
+  case 0:
+    detachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER));
+    REAL_RPM = 0;
+    break;
+
+  case 1:
+    lastUpdate = millis();
+    ENC_STATE = 2;
+    revCount = 0;
+    if (TACHO_STYLE == 1)
+    {
+      attachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER), tach_interrupt, CHANGE); //interrupt pin
+    }
+    if (TACHO_STYLE == 2)
+    {
+      averageCnt = 0;
+      revCountSmooth[0] = 0;
+      revCountSmooth[1] = 0;
+      revCountSmooth[2] = 0;
+      revCountSmooth[3] = 0;
+      revCountSmooth[4] = 0;
+      startTime = millis();
+      attachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER), tach_count, CHANGE); //interrupt pin
+    }
+
+    break;
+  case 2:
+    if (millis() - lastUpdate >= isrTime)
+    {
+      if (TACHO_STYLE == 1)
+      {
+
+        if (revCount > 0)
+        {
+          REAL_RPM = 40000.0 / (accumulator >> 3);
+        }
+        lastUpdate = millis();
+        revCount = 0;
+      }
+      if (TACHO_STYLE == 2)
+      {
+        unsigned long timPeroid;
+        float revCountCopyAvg;
+        detachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER));
+        timPeroid = micros() - startTime;
+        revCountCopy = revCount;
+        revCount = 0;
+        startTime = micros();
+        attachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER), tach_count, CHANGE); //interrupt pin
+        revCountSmooth[4] = revCountSmooth[3];
+        revCountSmooth[3] = revCountSmooth[2];
+        revCountSmooth[2] = revCountSmooth[1];
+        revCountSmooth[1] = revCountSmooth[0];
+        revCountSmooth[0] = revCountCopy;
+        if (averageCnt < averageCntMax)
+        {
+          averageCnt++;
+        }
+        revCountCopyAvg = (revCountSmooth[0] + revCountSmooth[1] + revCountSmooth[2] + revCountSmooth[3] + revCountSmooth[4]) / float(averageCnt);
+        REAL_RPM = ((revCountCopyAvg / 1500.0f) / timPeroid) * 60000000.0f;
+        lastUpdate = millis();
+      }
+      Serial.println(REAL_RPM, 4);
+    }
+    break;
+
+  default:
+    break;
+  }
+}
+
+void PID_ON_OFF()
+{
+  if (bool(enu[2]) != PidOnOff)
+  {
+    if (!bool(enu[2]))
+    {
+      DBG("AUTOMATIC PID");
+      myPID.SetSampleTime(SAMPLE_TIME);
+      myPID.SetMode(AUTOMATIC);
+    }
+    else
+    {
+      DBG("MANUAL PID");
+      myPID.SetMode(MANUAL);
+      // Output = open_loop_pwm;
+    }
+    PidOnOff = bool(enu[2]);
+  }
+}
+
 void read_rotary()
 {
   if (testDT)
     master_count++;
   else
     master_count--;
-};
-char EncRead()
-{
-  return master_count;
-};
-void EncWrite(char addVal)
+}
+
+void EncWrite(int8_t addVal)
 {
   detachInterrupt(digitalPinToInterrupt(ROT_ENC_CLK));
-  master_count = addVal;
+  master_count += addVal;
   attachInterrupt(digitalPinToInterrupt(ROT_ENC_CLK), read_rotary, CHANGE);
 };
-void blinkLed(uint8_t times)
+
+void SetButton(uint8_t btn)
 {
-  // if (!blinkStart)
-  // {
-  //   blinkStart = true;
-  //   blinkCount = times;
-  // }
-  // if (blinkStart)
-  // {
-  //   unsigned long currentMillis = millis();
-  //   if (currentMillis - previousMillis >= interval)
-  //   {
-  //     // save the last time you blinked the LED
-  //     previousMillis = currentMillis;
-
-  //     // if the LED is off turn it on and vice-versa:
-  // if (ledState == LOW)
-  // {
-  //   ledState = HIGH;
-  // }
-  // else
-  // {
-  //   ledState = LOW;
-  // }
-
-  // set the LED with the ledState of the variable:
-  digitalWrite(LED, HIGH);
-  delay(800);
-  digitalWrite(LED, LOW);
-  delay(800);
-  digitalWrite(LED, HIGH);
-  delay(800);
-  digitalWrite(LED, LOW);
-  delay(800);
-  // blinkCount--;
-  // }
-  // }
-  // if (!blinkCount)
-  // {
-  //   blinkStart = false;
-  // }
+  bitWrite(BT_ST, btn, HIGH);
 }
-void formatUlamki()
+bool ChceckBtn(uint8_t btn)
 {
-}
-void formatDir()
-{
-}
-void formatInt()
-{
-}
-void triger()
-{
-}
-void formatPWM()
-{
-}
-
-// void SaveToEEPROM()
-// {
-//   uint16_t AdressStart = 0;
-//   /*
-//   char *name[];
-//   uint8_t Id;
-//   uint8_t minVal;
-//   uint16_t maxVal;
-//   uint16_t curVal;
-//   uint8_t incVal;
-//   uint8_t frac;
-//   void (*handler)();
-// */
-
-//   struct Config1
-//   { //structure that we want to store
-//     char name[20] = "Srednica";
-//     uint8_t id = 0;
-//     uint16_t minVal = 10;
-//     uint16_t maxVal = 300;
-//     uint16_t curVal = 100;
-//     uint16_t incVal = 1;
-//     uint16_t frac = 1;
-//     void (*handler)() = printMM;
-//   } Config1;
-//   struct Config2
-//   { //structure that we want to store
-//     char name[20] = "Predkoc";
-//     uint8_t id = 1;
-//     uint16_t minVal = 10;
-//     uint16_t maxVal = 300;
-//     uint16_t curVal = 20;
-//     uint16_t incVal = 1;
-//     uint16_t frac = 10;
-//     void (*handler)() = printVC;
-//   } Config2;
-
-//   struct Config3
-//   { //structure that we want to store
-//     char name[20] = "Pauza";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 5000;
-//     uint16_t curVal = 0;
-//     uint16_t incVal = 1;
-//     uint16_t frac = 1;
-//     void (*handler)() = printMM;
-//   } Config3;
-//   struct Config4
-//   { //structure that we want to store
-//     char name[20] = "SoftStart";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 5000;
-//     uint16_t curVal = 0;
-//     uint16_t incVal = 1;
-//     uint16_t frac = 1;
-//     void (*handler)() = printMM;
-//   } Config4;
-//   struct Config5
-//   { //structure that we want to store
-//     char name[20] = "SmoothStop";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 5000;
-//     uint16_t curVal = 0;
-//     uint16_t incVal = 1;
-//     uint16_t frac = 1;
-//     void (*handler)() = printMM;
-//   } Config5;
-//   struct Config6
-//   { //structure that we want to store
-//     char name[20] = "PID";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 1;
-//     uint16_t curVal = 0;
-//     uint16_t incVal = 1;
-//     uint16_t frac = 1;
-//     void (*handler)() = ON_OFF;
-//   } Config6;
-//   struct Config7
-//   { //structure that we want to store
-//     char name[20] = "Kp";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 1000;
-//     uint16_t curVal = 1;
-//     uint16_t incVal = 100;
-//     uint16_t frac = 100;
-//     void (*handler)() = NULL;
-//   } Config7;
-//   struct Config8
-//   { //structure that we want to store
-//     char name[20] = "Ki";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 1000;
-//     uint16_t curVal = 1;
-//     uint16_t incVal = 100;
-//     uint16_t frac = 100;
-//     void (*handler)() = NULL;
-//   } Config8;
-//   struct Config9
-//   { //structure that we want to store
-//     char name[20] = "Kd";
-//     uint8_t id = 0;
-//     uint16_t minVal = 0;
-//     uint16_t maxVal = 1000;
-//     uint16_t curVal = 1;
-//     uint16_t incVal = 100;
-//     uint16_t frac = 100;
-//     void (*handler)() = NULL;
-//   } Config9;
-
-//   EEPROM.put(AdressStart, Config1);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config2);
-//   AdressStart += sizeof(Config2);
-//   EEPROM.put(AdressStart, Config3);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config4);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config5);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config6);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config7);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config8);
-//   AdressStart += sizeof(Config1);
-//   EEPROM.put(AdressStart, Config9);
-//   AdressStart += sizeof(Config1);
-// }
-
-uint8_t
-readButtons()
-{
-  uint8_t btn = NO_PRESS;
-#define g_LCDML_CONTROL_button_long_press 800  // ms
-#define g_LCDML_CONTROL_button_short_press 120 // ms
-  // declare variable for this function
-  int32_t g_LCDML_CONTROL_Encoder_position = EncRead();
-  // bool g_LCDML_button = testSW;
-  btn = BT_START_STOP.getButton();
-  if ((bool)btn)
+  if (bitRead(BT_ST, btn))
   {
-    return btn;
-  }
-  // check if encoder is rotated on direction A
-  if (g_LCDML_CONTROL_Encoder_position <= -1)
-  {
-    // check if the button is pressed and the encoder is rotated
-    // the button is low active
-    if (testSW == LOW)
-    {
-      // button is pressed
-      btn = LEFT;
-      // reset button press time for next detection
-      g_LCDML_CONTROL_button_prev = HIGH;
-    }
-    else
-    {
-      btn = DOWN;
-    }
-    // init encoder for the next step
-    EncWrite(master_count + 2);
-    // ENCODER.write(g_LCDML_CONTROL_Encoder_position + 4);
-  }
-  // check if encoder is rotated on direction B
-  else if (g_LCDML_CONTROL_Encoder_position >= 1)
-  {
-    // check if the button is pressed and the encoder is rotated
-    // the button is low active
-    if (testSW == LOW)
-    {
-      // button is pressed
-      btn = RIGHT;
-      // reset button press time for next detection
-      g_LCDML_CONTROL_button_prev = HIGH;
-    }
-    else
-    {
-      btn = UP;
-    }
-    // init encoder for the next step
-    EncWrite(master_count - 2);
+    bitWrite(BT_ST, btn, LOW);
+    return true;
   }
   else
   {
-    // check if the button was pressed for a shortly time or a long time
-    //falling edge, button pressed, no action
-    if (testSW == LOW && g_LCDML_CONTROL_button_prev == HIGH)
+    return false;
+  }
+}
+/*****************************************************************
+ *  clear the specyfic button state after action runinng
+ * ***************************************************************/
+
+bool CheckAnyBtn()
+{
+  if (BT_ST > 0)
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+void controlBtn()
+{
+  if (master_count <= -2)
+  {
+    // check if the button is pressed and the encoder is rotated
+    // the button is low active
+    if (BTN_SW_ROTATY == LOW)
     {
-      g_LCDML_CONTROL_button_prev = LOW;
-      g_LCDML_CONTROL_button_press_time = millis();
-    }
-    // rising edge, button not pressed, check how long was it pressed
-    else if (testSW == HIGH && g_LCDML_CONTROL_button_prev == LOW)
-    {
-      g_LCDML_CONTROL_button_prev = HIGH;
-      // check how long was the button pressed and detect a long press or a short press
-      // check long press situation
-      if ((millis() - g_LCDML_CONTROL_button_press_time) >= g_LCDML_CONTROL_button_long_press)
-      {
-        // long press detected
-        btn = ENC_LONG_PRESS;
-      }
-      // check short press situation
-      else if ((millis() - g_LCDML_CONTROL_button_press_time) >= g_LCDML_CONTROL_button_short_press)
-      {
-        // short press detected
-        btn = ENC_SHORT_PRESS;
-      }
+      // button is pressed
+      SetButton(BTN_RIGHT);
+      // reset button press time for next detection
+      CONTROL_ROTARY_SW_prev = HIGH;
     }
     else
     {
-      // do nothing
+      SetButton(BTN_UP);
+    }
+    // init encoder for the next step
+    EncWrite(2);
+    // ENCODER.write(g_LCDML_CONTROL_Encoder_position + 4);
+  }
+  // check if encoder is rotated on direction B
+  else if (master_count >= 2)
+  {
+    // check if the button is pressed and the encoder is rotated
+    // the button is low active
+    if (BTN_SW_ROTATY == LOW)
+    {
+      // button is pressed
+      SetButton(BTN_LEFT);
+      // reset button press time for next detection
+      CONTROL_ROTARY_SW_prev = HIGH;
+    }
+    else
+    {
+      SetButton(BTN_DOWN);
+    }
+    // init encoder for the next step
+    EncWrite(-2);
+  }
+  else if (BTN_SW_ROTATY == LOW && CONTROL_ROTARY_SW_prev == HIGH)
+  {
+    // check if the button was pressed for a shortly time or a long time
+    //CHANGE edge, button pressed, no action
+    CONTROL_ROTARY_SW_prev = LOW;
+    CONTROL_ROTARY_SW_press_time = millis();
+  }
+  else if (BTN_SW_ROTATY == LOW && CONTROL_ROTARY_SW_prev == LOW)
+  {
+    if ((millis() - CONTROL_ROTARY_SW_press_time) >= CONTROL_button_long_press)
+    {
+      // long press detected
+      if (!CONTROL_ROTARY_SW_LONG_PRESS_DETECT)
+      {
+        SetButton(BTN_SW_LONG);
+      }
     }
   }
-  return btn;
+  // CHANGE edge, button not pressed, check how long was it pressed
+  else if (BTN_SW_ROTATY == HIGH && CONTROL_ROTARY_SW_prev == LOW)
+  {
+    CONTROL_ROTARY_SW_prev = HIGH;
+    CONTROL_ROTARY_SW_LONG_PRESS_DETECT = false;
+    // check how long was the button pressed and detect a long press or a short press
+    // check long press situation
+
+    // check short press situation
+    if ((millis() - CONTROL_ROTARY_SW_press_time) >= CONTROL_button_short_press && (millis() - CONTROL_ROTARY_SW_press_time) <= CONTROL_button_long_press)
+    {
+      // short press detected
+      SetButton(BTN_SW_SHORT);
+    }
+  }
+  else if (digitalRead(BTN_START_STOP_PANEL) == HIGH && CONTROL_START_STOP_prev == LOW)
+  {
+    CONTROL_START_STOP_prev = HIGH;
+    CONTROL_START_STOP_press_time = millis();
+  }
+  else if (digitalRead(BTN_START_STOP_PANEL) == HIGH && CONTROL_START_STOP_prev == HIGH)
+  {
+    if ((millis() - CONTROL_START_STOP_press_time) >= CONTROL_button_long_press)
+    {
+      if (!CONTROL_START_STOP_LONG_PRESS_DETECT)
+      {
+        CONTROL_START_STOP_LONG_PRESS_DETECT = true;
+        SetButton(BTN_START_STOP_LONG);
+      }
+
+      // long press detected
+    }
+  }
+  // CHANGE edge, button not pressed, check how long was it pressed
+  else if (digitalRead(BTN_START_STOP_PANEL) == LOW && CONTROL_START_STOP_prev == HIGH)
+  {
+    CONTROL_START_STOP_prev = LOW;
+    CONTROL_START_STOP_LONG_PRESS_DETECT = false;
+    // check how long was the button pressed and detect a long press or a short press
+    // check long press situation
+    // if ((millis() - CONTROL_START_STOP_press_time) >= CONTROL_button_long_press)
+    // {
+    //   // long press detected
+    //   SetButton(BTN_START_STOP_LONG);
+    // }
+    // check short press situation
+    if ((millis() - CONTROL_START_STOP_press_time) >= CONTROL_button_short_press && (millis() - CONTROL_START_STOP_press_time) <= CONTROL_button_long_press)
+    {
+      // short press detected
+      SetButton(BTN_START_STOP_SHORT);
+    }
+  }
 }
 
-Display_ManagerClass Display;
-Motor motor(RL_MOTOR_CW, RL_MOTOR_CCW, RL_MOTOR_GEAR, RL_MOTOR_START_STOP, PWM_DAC);
+void WriteEEpromData()
+{
+  EEPROM.put(EEPROM_START_ADRESS, values);
+  EEPROM.put(sizeof(values), enu);
+
+  /*
+  for (size_t i = 0; i < 11; i++)
+  {
+    Serial.print("Write EEPROM val - ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(values[i]);
+  }
+  for (size_t i = 0; i < 3; i++)
+  {
+    Serial.print("Write EEPROM enum - ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(enu[i]);
+  }
+  */
+}
+void ReadEEpromData()
+{
+  EEPROM.get(EEPROM_START_ADRESS, values);
+  EEPROM.get(sizeof(values), enu);
+  GetParam();
+  /*
+  for (size_t i = 0; i < 11; i++)
+  {
+    Serial.print("Read EEPROM val - ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(values[i]);
+  }
+  for (size_t i = 0; i < 3; i++)
+  {
+    Serial.print("Read EEPROM enum - ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(enu[i]);
+  }
+  */
+}
+/********************************************************************************************
+ * 
+ * 
+ *    SETUP:
+ *      - INICJALIZACJA PARAMETROW.
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * ***************************************************************************************/
 void setup()
 {
-  Display.SetLcd(&lcd);
-  Display.SetParam(&Parameters[0], &MAX_PARAM);
-  motor.BindMotorState(&MOTOR_STATE);
-  Display.BindMotorState(&MOTOR_STATE);
-
-  // Ustawienie pinów IO
-  pinMode(MOTOR_ENCODER, INPUT);
-  pinMode(ROT_ENC_CLK, INPUT);
-  pinMode(ROT_ENC_DT, INPUT);
-  AppMode = APP_NORMAL_MODE;
-  LastAppMode = 100;
-  MOTOR_STATE = MT_STOP;
-  LAST_MOTOR_STATE = 100;
-  pinMode(LED, OUTPUT);
+  // REV = 0; //  START ALL THE VARIABLES FROM 0
 
   Serial.begin(115200);
+  Serial.println("start");
+  ReadEEpromData();
+  lcd.init();
+  lcd.clear(); // czyszczenie wyświetlacza lcd
+  lcd.backlight();
+  // char testa[] = "test";
+  // char *b = &testa[0];
+  fontPrinter.BindLcd(&lcd);
+  fontPrinter.WriteBigString(" PROEKO ", 0, 1);
+
+  motor.BindMotorState(&MOTOR_STATE);
+  motor.SetTimes(&values[5], &values[6], &values[7]);
+  motor.SetGears(&enu[0]);
+  motor.BindCCWDir(&MOTOR_CCW_DIR);
+
+  pinMode(MOTOR_ENCODER, INPUT);
+  pinMode(ROT_ENC_CLK, INPUT_PULLUP);
+  pinMode(ROT_ENC_DT, INPUT_PULLUP);
+  pinMode(BTN_START_STOP_PANEL, INPUT_PULLUP);
+  pinMode(LED, OUTPUT);
+  AppMode = APP_IDLE_VIEW;
+  LastAppMode = 100;
+  MOTOR_STATE = MOTOR_STOP;
+  LAST_MOTOR_STATE = 100;
+  ENC_STATE = 0;
+  READ_RPM = true;
+  cursorFocus = 1;
+  pwm = 50;
+  PidOnOff = !bool(enu[2]);
   //Initialize serial and wait for port to open:
-  // Serial.begin(9600);
-  while (!Serial)
-  {
-    ; // wait for serial port to connect. Needed for native USB
-  }
-  // SaveToEEPROM();
-  attachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER), isr, RISING); //interrupt pin
+
+  pinMode(NCO_0, INPUT_PULLUP);
+  pinMode(NCO_1, INPUT_PULLUP);
+  pinMode(NCO_2, INPUT_PULLUP);
+  pinMode(NCO_3, INPUT_PULLUP);
+  pinMode(NCI_0, INPUT_PULLUP);
+  pinMode(NCI_1, INPUT_PULLUP);
+  pinMode(NCI_2, INPUT_PULLUP);
+  pinMode(NCI_3, INPUT_PULLUP);
+  pinMode(NCI_4, INPUT_PULLUP);
+
+  PWR_LED_ON;
+  RED_LED_ON();
+  GREEN_LED_OFF();
+  // attachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER), isr, CHANGE); //interrupt pin
   attachInterrupt(digitalPinToInterrupt(ROT_ENC_CLK), read_rotary, CHANGE);
-  g_LCDML_CONTROL_button_press_time = millis();
-  g_LCDML_CONTROL_button_prev = HIGH;
-  // Display_Manager.setStruct(&menu);
-  // Display_Manager.drawMainScreen();
-  // MENU_SIZE = sizeof(menu) / sizeof(menu[0]);
+  CONTROL_ROTARY_SW_press_time = millis();
+  CONTROL_ROTARY_SW_prev = HIGH;
 
-  // void setCurrentMenuPos(byte & CURRENT_MENU_POS);
-  // void setLastMenuPos(byte & CURRENT_MENU_POS);
-  // void setCurrentMenuLevel(byte & CURRENT_MENU_LEVEL);
-  // void setLastMenuLevel(byte & LAST_MENU_LEVEL);
-  // void setMenuIsOn(bool &MENU_IS_ON);
-  // void setHomeScreenCursorPos(byte & HOME_SCREEN_CURSOR_POSITION);
-  // Display_Manager.drawMainScreen(1, 2, 3, 4, 5);
-  // Display_Manager.bindVariables(&timeold);
+  Display.SetREAL_RPM_P(&REAL_RPM);
+  Display.bindFocus(&focus);
+  Display.BindSpeed(&paramRPM, &paramRPS, &paramMMSEC);
+  Display.BindDia(&paramDIA);
+  Display.BindSpeedMethod(&paramSpeedMethod);
+  // Display.cutText();
+  Timer1.initialize(128); // 40 us = 25 kHz
+  Timer1.pwm(PWM_DAC, 0);
+  motor.BindTimer1(&Timer1);
+  myPID.SetOutputLimits(MIN_PWM_VALUE, MAX_PWM_VALUE);
+  startFlag = true;
+  ScreenSaverOn = false;
+  ShowScreenSaver = false;
 }
-
-void loop()
+/********************************************************************************************
+ * 
+ * 
+ *    LOOP:
+ *      - PROGRAM FLOW.
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * ***************************************************************************************/
+void appMotor()
 {
-  MOTOR_STATE = motor.GetState();
-  uint8_t btn = 0;
-  switch (AppMode)
+  if (LastAppMode != AppMode)
   {
-  case APP_NORMAL_MODE:
-    if (LastAppMode != AppMode)
-    {
-      Display.drawMainScreen();
-      LastAppMode = AppMode;
-    }
-    btn = readButtons();
-    if (MOTOR_STATE == 0)
-    {
-      if (btn == 1)
-      {
-        motor.SET_PWM(200);
-        motor.motorStart(MOTOR_CCW_DIR);
-      }
-      else if (btn == 2)
-      {
-        MOTOR_CCW_DIR = !MOTOR_CCW_DIR;
-        motor.motorStart(MOTOR_CCW_DIR);
-      }
-    }
-    else if (MOTOR_STATE == 3 || MOTOR_STATE == 4)
-    {
-      if (btn == 1)
-      {
-        motor.motorStop();
-      }
-    }
+    Display.drawMainScreen();
+    Display.updateScreen();
+    WriteEEpromData();
+    LastAppMode = AppMode;
+    myPID.SetTunings(paramKp, paramKi, paramKd);
+    PID_ON_OFF();
+    Output = 0;
+    paramLastRPM = 0;
+  }
+  // DBG(ENC_STATE);
 
-    motor.motorManage();
-    if (MOTOR_STATE != LAST_MOTOR_STATE)
+  rpmCalc();
+  Setpoint = paramRPM * 100;
+  if (ChceckBtn(BTN_START_STOP_SHORT))
+  {
+    if (MOTOR_STATE == MOTOR_STOP)
     {
-      Display.Update_MOT_Status(MOTOR_STATE);
+      motor.motorStart();
+      ENC_STATE = 1;
+    }
+    else if (MOTOR_STATE == MOTOR_OBR_PRAWO || MOTOR_STATE == MOTOR_OBR_LEWO)
+    {
+      MOTOR_STATE = MOTOR_SMOOTH_STOP;
+    }
+    else if (MOTOR_STATE == MOTOR_PAUSE)
+    {
+      MOTOR_STATE = MOTOR_PAUSE;
+    }
+    else if (MOTOR_STATE == MOTOR_SOFT_START)
+    {
+      MOTOR_STATE = MOTOR_SMOOTH_STOP;
+    }
+  }
+
+  if (ChceckBtn(BTN_SW_LONG))
+  {
+    AppMode = APP_MENU_VIEW;
+  }
+  switch (MOTOR_STATE)
+  {
+  case MOTOR_STOP: //stop
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
       LAST_MOTOR_STATE = MOTOR_STATE;
+      AppMode = APP_IDLE_VIEW;
+      Display.ForceRefresh();
     }
-    if (IsDiaChanged)
-    {
-      LAST_DIA = curVal[0];
-      Display.UpdateDiameterLcd(curVal[0]);
-    }
-    if (IsVcChanged)
-    {
-      LAST_VC = curVal[1];
-      Display.UpdateSetLcd((float)curVal[1]);
-    }
-    if (IsReadRpmChanged)
-    {
-      LAST_RPM = REAL_RPM;
-      Display.UpdateDiameterLcd(curVal[0]);
-    }
-#ifdef DEBUG
-    Serial.print("MOTOR_STATE: ");
-    Serial.println(MOTOR_STATE);
-#endif // DEBUG
-    break;
-  case APP_MENU_MODE:
-    /* code */
     break;
 
-  case APP_PROCESS_MENU_CMD:
-    /* code */
+  case MOTOR_PAUSE: //pause
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
+      LAST_MOTOR_STATE = MOTOR_STATE;
+      motor.DoPause();
+      RED_LED_OFF();
+      GREEN_LED_ON();
+      Display.ForceRefresh();
+    }
+    break;
+
+  case MOTOR_SOFT_START:
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
+      motor.relayStart();
+      motor.DoSofrStart(Output);
+      RED_LED_OFF();
+      GREEN_LED_ON();
+      LAST_MOTOR_STATE = MOTOR_STATE;
+      Display.ForceRefresh();
+    }
+    break;
+
+  case MOTOR_OBR_PRAWO:
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
+      LAST_MOTOR_STATE = MOTOR_STATE;
+      motor.relayStart();
+      Display.ForceRefresh();
+    }
+    if (ChceckBtn(BTN_START_STOP_SHORT))
+    {
+      MOTOR_STATE = MOTOR_SMOOTH_STOP;
+    }
+    myPID.Compute();
+    motor.SET_PWM(Output);
+    DBG(Output);
+    RED_LED_OFF();
+    GREEN_LED_ON();
+    break;
+
+  case MOTOR_OBR_LEWO:
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
+      LAST_MOTOR_STATE = MOTOR_STATE;
+      motor.relayStart();
+
+      Display.ForceRefresh();
+      RED_LED_OFF();
+      GREEN_LED_ON();
+    }
+    if (ChceckBtn(BTN_START_STOP_SHORT))
+    {
+      MOTOR_STATE = MOTOR_SMOOTH_STOP;
+    }
+    myPID.Compute();
+    motor.SET_PWM(Output);
+    DBG(Output);
+    break;
+
+  case MOTOR_SMOOTH_STOP:
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
+      LAST_MOTOR_STATE = MOTOR_STATE;
+      motor.DoSmoothStop(Output);
+      Display.ForceRefresh();
+    }
+    break;
+
+  case MOTOR_GO_TO_STOP:
+    if (LAST_MOTOR_STATE != MOTOR_STATE)
+    {
+      LAST_MOTOR_STATE = MOTOR_STATE;
+      motor.motorStop();
+      ENC_STATE = MOTOR_STOP;
+      RED_LED_ON();
+      GREEN_LED_OFF();
+      Display.ForceRefresh();
+    }
+
     break;
 
   default:
     break;
   }
-  // Serial.println(readButtons());
-  // Serial.print("master_count ");
-  // Serial.println(testSW);
-  // lcd.setCursor(0, 0);
-  // lcd.print("test");
-  // delay(200);
-  // Display_Manager.cutText();
+  if (MOTOR_STATE == MOTOR_OBR_LEWO || MOTOR_STATE == MOTOR_OBR_PRAWO)
+  {
+    CheckFastParameterChange();
+  }
+  if (paramPidOnOff)
+  {
+    if (paramLastRPM != paramRPM)
+    {
+      motor.SET_PWM(CalcPWM(paramRPM));
+    }
+  }
+  else
+  {
+    motor.SET_PWM(Output);
+  }
+  Display.updateScreen();
+}
+
+void APP_MENU_MODE()
+{
+  if (LastAppMode != AppMode)
+  {
+    WriteEEpromData();
+    ReadEEpromData();
+
+    LastAppMode = AppMode;
+    menu.MenuStart();
+    menu.GetMenu(0);
+    menu.DrawMenu();
+  }
+  menu.UpdateMenu();
+}
+
+void appIdle()
+{
+  if (startFlag)
+  {
+    while (!CheckAnyBtn())
+    {
+      controlBtn();
+      delay(10);
+    }
+    BT_ST = 0x00000000;
+    startFlag = false;
+    ScreenSaverOn = true;
+    ScreenSaverTime = millis();
+  }
+
+  if (LastAppMode != AppMode)
+  {
+    Display.drawMainScreen();
+    Display.ForceRefresh();
+    Display.updateScreen();
+    LastAppMode = AppMode;
+  }
+  if (CheckAnyBtn())
+  {
+    CheckFastParameterChange();
+
+    if (ChceckBtn(BTN_START_STOP_SHORT))
+    {
+      AppMode = APP_MOTOR_VIEW;
+      motor.motorStart();
+      ENC_STATE = 1;
+    }
+    else if (ChceckBtn(BTN_SW_LONG))
+    {
+      LedAcceptFlag = true;
+      AppMode = APP_MENU_VIEW;
+    }
+    else if (ChceckBtn(BTN_SW_SHORT))
+    {
+      LedAcceptFlag = true;
+      focusInc();
+    }
+    else if (ChceckBtn(BTN_START_STOP_LONG))
+    {
+      LedAcceptFlag = true;
+      MOTOR_CCW_DIR = !MOTOR_CCW_DIR;
+    }
+    Display.ForceRefresh();
+    Display.updateScreen();
+    ScreenSaverTime = millis();
+    ShowScreenSaver = false;
+  }
+  if (ScreenSaverOn)
+  {
+    if (millis() - ScreenSaverTime >= paramScreenSaver && !ShowScreenSaver)
+    {
+      ShowScreenSaver = true;
+      lcd.clear();
+    }
+  }
+  if (ShowScreenSaver)
+  {
+    if (millis() - ScreenRefreshTime >= 1000)
+    {
+      DateTime now = rtc.now();
+      char *timeStr = (char *)malloc(sizeof(char) * 8);
+      sprintf(timeStr, "%d:%d:%d", now.hour(), now.minute(), now.second());
+      fontPrinter.WriteBigString(timeStr, 2, 1);
+      free(timeStr);
+      ScreenRefreshTime = millis();
+    }
+  }
+  // delay(500);
+}
+
+void CheckFastParameterChange()
+{
+  if (ChceckBtn(BTN_UP))
+  {
+    FastParamChange(0);
+  }
+  else if (ChceckBtn(BTN_DOWN))
+  {
+    FastParamChange(1);
+  }
+  else if (ChceckBtn(BTN_LEFT))
+  {
+    FastParamChange(3);
+  }
+  else if (ChceckBtn(BTN_RIGHT))
+  {
+    FastParamChange(2);
+  }
+}
+
+void FastParamChange(int mode)
+{
+  float val;
+  switch (mode)
+  {
+  case 0:
+    val = -1;
+    break;
+
+  case 1:
+    val = 1;
+    break;
+
+  case 2:
+    val = -10;
+    break;
+
+  case 3:
+    val = 10;
+    break;
+
+  default:
+    break;
+  }
+  // DBG(val);
+  // DBG(paramRPM);
+  // DBG(paramSpeedMethod);
+  if (paramSpeedMethod == 0)
+  {
+    val = val / VAL_TBL__DIV(0);
+    paramRPM += val;
+    paramRPS = paramRPM / 60.0f;
+    paramMMSEC = RPM_TO_MMSEC(paramRPM, paramDIA);
+    DBG(paramRPM);
+    DBG(paramRPS);
+    DBG(paramMMSEC);
+  }
+  else if (paramSpeedMethod == 1)
+  {
+    val = val / VAL_TBL__DIV(1);
+    paramRPS += val;
+    paramRPM = paramRPS * 60.0f;
+    paramMMSEC = RPM_TO_MMSEC(paramRPM, paramDIA);
+    // DBG(paramRPS);
+  }
+  else if (paramSpeedMethod == 2)
+  {
+    if (!focus)
+    {
+      paramDIA += val;
+      paramRPM = MMSEC_TO_RPM(paramMMSEC, paramDIA);
+      paramMMSEC = RPM_TO_MMSEC(paramRPM, paramDIA);
+      paramRPS = paramRPM / 60.0f;
+    }
+    else
+    {
+      val = val / VAL_TBL__DIV(2);
+      paramMMSEC += val;
+      paramRPM = MMSEC_TO_RPM(paramMMSEC, paramDIA);
+      paramRPS = paramRPM / 60.0f;
+    }
+  }
+  values[0] = int(paramRPM * VAL_TBL__DIV(0));
+  values[1] = int(paramRPS * VAL_TBL__DIV(1));
+  values[2] = int(paramMMSEC * VAL_TBL__DIV(2));
+  values[3] = int(paramDIA * VAL_TBL__DIV(3));
+  Display.updateScreen();
+  LastEEpromWriteTime = millis();
+  WriteToEEprom_flag = true;
+  WriteParamToEEprom();
+}
+void WriteParamToEEprom()
+{
+
+  // values[4] = int(paramScreenSaver * VAL_TBL__DIV(4));
+  // values[5] = int(paramTimePause * VAL_TBL__DIV(5));
+  // values[6] = int(paramTimeStart * VAL_TBL__DIV(6));
+  // values[7] = int(paramTimeStop * VAL_TBL__DIV(7));
+  // values[8] = int(paramKp * VAL_TBL__DIV(8));
+  // values[9] = int(paramKi * VAL_TBL__DIV(9));
+  // values[10] = int(paramKd * VAL_TBL__DIV(10));
+  // enu[0] = paramGEAR;
+  // enu[1] = paramSpeedMethod;
+  // enu[2] = (int)paramPidOnOff;
+  // if (WriteToEEprom_flag == true && (millis() - LastEEpromWriteTime) > EEpromWriteTime)
+  if (WriteToEEprom_flag == true)
+  {
+    WriteToEEprom_flag = false;
+    LastEEpromWriteTime = millis();
+    WriteEEpromData();
+  }
+}
+void loop()
+{
+
+  LedAccept();
+  Input = REAL_RPM * 100;
+  WriteParamToEEprom();
+  controlBtn();
+
+  switch (AppMode)
+  {
+  case APP_MOTOR_VIEW:
+    appMotor();
+    break;
+
+  case APP_MENU_VIEW:
+
+    APP_MENU_MODE();
+    break;
+
+  case APP_IDLE_VIEW:
+    appIdle();
+
+  default:
+    break;
+  }
 }

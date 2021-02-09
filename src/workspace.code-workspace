@@ -1,0 +1,50 @@
+{
+    "folders": [
+		{
+			"name": "Pozycjoner_Spawalniczy",
+			"path": ".."
+		},
+		{
+			"name": "MojeMenu",
+			"path": "..\\..\\MojeMenu"
+		},
+		{
+			"name": "201221-232331-nanoatmega328",
+			"path": "..\\..\\201221-232331-nanoatmega328"
+		},
+		{
+			"name": "Rolety-2",
+			"path": "..\\..\\Rolety-2"
+		},
+		{
+			"name": "Rolety_Lan",
+			"path": "..\\..\\Rolety_Lan"
+		},
+		{
+			"name": "ccc",
+			"path": "..\\..\\ccc"
+		},
+		{
+			"name": "termostat",
+			"path": "..\\..\\termostat"
+		},
+		{
+			"name": "BLINK_STM",
+			"path": "..\\..\\BLINK_STM"
+		},
+		{
+			"name": "LED2",
+			"path": "..\\..\\LED2"
+		},
+		{
+			"name": "POZYCJONER3",
+			"path": "..\\..\\POZYCJONER3"
+		}
+	],
+    "settings": {
+        "files.associations": {
+            "*.yaml": "home-assistant"
+        },
+        "editor.formatOnSave": true
+    }
+}
