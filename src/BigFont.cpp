@@ -2,7 +2,6 @@
 
 BigFont::BigFont()
 {
-
 }
 
 void BigFont::BindLcd(LiquidCrystal_I2C *lcd)
@@ -17,7 +16,6 @@ void BigFont::BindLcd(LiquidCrystal_I2C *lcd)
         }
     }
 }
-
 
 int BigFont::WriteBigChar(char ch, byte x, byte y)
 {
@@ -47,10 +45,10 @@ int BigFont::WriteBigChar(char ch, byte x, byte y)
     return nb / 2 - 1; // returns number of columns used by char
 }
 
-void BigFont::WriteBigString(char *str, byte x, byte y)
+void BigFont::WriteBigString(char const *str, byte x, byte y)
 {
     char c;
     while ((c = *str++))
         x += WriteBigChar(c, x, y) + 1;
-    return 0;
+    // return 0;
 }

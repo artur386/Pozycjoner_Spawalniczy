@@ -121,25 +121,7 @@ void Motor::DoSofrStart(int pwm)
 
     if (*softStartTIME > 0)
     {
-        if (!softStartOn)
-        {
-            LastSoftStartTime = millis();
-            softStartOn = true;
-        }
-        if (softStartOn)
-        {
-
-            while (millis() - LastSoftStartTime < uint32_t(*softStartTIME))
-            {
-                // DBG(map((millis() - LastSoftStartTime), 0, *softStartTIME, 0, pwm));
-                int pwmb = map((millis() - LastSoftStartTime), 0, *softStartTIME, 0, pwm);
-                TimerJeden->pwm(this->pwm_pin, pwmb);
-                delay(10);
-            }
-            TimerJeden->pwm(this->pwm_pin, pwm);
-
-            softStartOn = false;
-        }
+ 
     }
     // else
     // {

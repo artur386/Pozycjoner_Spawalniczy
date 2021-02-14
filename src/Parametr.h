@@ -5,13 +5,15 @@
 
 struct Parametr
 {
-    char Nazwa[8];
-    uint32_t val;
-    uint16_t offset;
+    uint8_t id;
+    char Nazwa[6];
+    int val;
+    uint8_t offset;
     uint32_t maxVal;
-    uint16_t inc;
-    uint16_t precision;
-    // void (*void)()
+    uint8_t inc;
+    uint8_t precision;
+    uint8_t unitNum;
+    uint8_t type;
 };
 
 #endif // !PARAMETR_H

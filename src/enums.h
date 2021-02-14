@@ -2,10 +2,21 @@
 #define ENUMS_H
 #include <avr/pgmspace.h>
 // relay motor pins:
-#define RL_MOTOR_CW 11
-#define RL_MOTOR_CCW 8
-#define RL_MOTOR_GEAR 10
+#define RL_MOTOR_CW A7
+#define RL_MOTOR_CCW A3
+#define RL_MOTOR_GEAR A6
 #define RL_MOTOR_START_STOP A0
+
+#define SAMPLE_TIME 100
+#define LED_ACCEPT_BLINK_TIME 100
+
+// #define GET_INT_VARIABLE(X) values[x]
+// #define GET_DIV_VARIABLE(x) pgm_read_word(&(val_table[x][2]))
+// #define GET_FLOAT_VARIABLE(x) float(GET_INT_VARIABLE(x) / GET_DIV_VARIABLE(x))
+
+#define testDT ((PIND >> ROT_ENC_DT) & 1)
+#define BTN_START_STOP_TEST !((PIND >> BTN_START_STOP_PANEL) & 1)
+#define BTN_SW_ROTATY ((PIND >> ROT_ENC_SW) & 1)
 
 // pwm pin
 #define PWM_DAC 9
@@ -29,15 +40,13 @@
 
 // LEDS
 
-#define NCO_0 0
-#define NCO_1 1
-#define NCO_2 5
-#define NCO_3 12
-#define NCI_0 A3
-#define NCI_1 A4
-#define NCI_2 A5
-#define NCI_3 A6
-#define NCI_4 A7
+#define RS 0
+#define RW 1
+#define EN 5
+#define D0 8
+#define D1 10
+#define D2 11
+#define D3 12
 /**************************************
  * declaration enum etc:
  * ************************************/
@@ -68,12 +77,35 @@ enum MotorStateEnum
     MOTOR_SMOOTH_STOP,
     MOTOR_GO_TO_STOP
 };
+
+enum ParameterName
+{
+    p_RPM,
+    p_MMSEC,
+    p_DIA,
+    p_SCR_SAVE,
+    p_PAUSE_T,
+    p_START_T,
+    p_STOP_T,
+    p_KP,
+    p_KI,
+    p_KD,
+    p_BiegSilnk,
+    p_UNIT,
+    p_PidOnOff
+};
+
 #define DEBUG 1
 #ifdef DEBUG
-#define DBG(x)          \
-    Serial.print(#x);   \
-    Serial.print(": "); \
+#define DBG(x)           \
+    Serial.print(F(#x)); \
+    Serial.print(": ");  \
     Serial.println(x)
+
+#define DBGF(x)                    \
+    Serial.print("DBG FLAG: ---"); \
+    Serial.print(F(#x));           \
+    Serial.println("---")
 
 #else
 #define DBG(NULL)
@@ -103,12 +135,12 @@ enum MotorStateEnum
 #define CONTROL_button_long_press 750  // ms
 #define CONTROL_button_short_press 100 // ms
 
-#define MM_PER_SEC_to_M_PER_MIN(vc) (vc * 0.0166)
-#define M_PER_MIN_to_MM_SEC(vc) (vc * 16.6666)
-#define VC_TO_RPM(vc) (vc * 1000) / (PI * paramDIA)
-#define RPM_TO_VC(rpm) (PI * (*paramDIA) * rpm) / 1000.0f
+// #define MM_PER_SEC_to_M_PER_MIN(vc) (vc * 0.0166)
+// #define M_PER_MIN_to_MM_SEC(vc) (vc * 16.6666)
+// #define VC_TO_RPM(vc) (vc * 1000) / (PI * (*(parameters_p + 2)).val)
+// #define RPM_TO_VC(rpm) (PI * (*(parameters_p + 2)).val * (*(parameters_p + 0)).val) / 1000.0f
 
-#define RPM_TO_MMSEC(rpm, dia) (((PI * dia * rpm) / 1000.0f) * 16.6666f)
+#define RPM_TO_MMSEC(rpm, dia) ((PI * (dia / 1000.0) * (rpm / 60)) / 1000.0f)
 #define MMSEC_TO_RPM(mmsec, dia) (((mmsec * 0.0166) * 1000.0f) / (PI * dia))
 
 #define RED_LED_ON() digitalWrite(RLED, HIGH)
@@ -123,48 +155,49 @@ enum MotorStateEnum
 
 #define MOTOR_CW_START()             \
     digitalWrite(RL_MOTOR_CCW, LOW); \
-    delay(10);                       \
+    delay(50);                       \
     digitalWrite(RL_MOTOR_CW, HIGH); \
-    delay(10);                       \
+    delay(50);                       \
     digitalWrite(RL_MOTOR_START_STOP, HIGH);
-#define MOTOR_CCW_START()             \
-    digitalWrite(RL_MOTOR_CW, LOW);   \
-    delay(10);                        \
-    digitalWrite(RL_MOTOR_CCW, HIGH); \
-    delay(10);                        \
-    digitalWrite(RL_MOTOR_START_STOP, HIGH);
+#define MOTOR_CCW_START()
+
 #define MOTOR_STOP()                        \
     digitalWrite(RL_MOTOR_START_STOP, LOW); \
     delay(100);                             \
     digitalWrite(RL_MOTOR_CCW, LOW);        \
     delay(10);                              \
-    digitalWrite(RL_MOTOR_CW, LOW);
+    digitalWrite(RL_MOTOR_CW, LOW);         \
+    delay(10);                              \
+    digitalWrite(RL_MOTOR_GEAR, LOW);
 
-#define VAL_TBL__MAX(id) pgm_read_word(&(val_table[id][0]))
-#define VAL_TBL__INC(id) pgm_read_word(&(val_table[id][1]))
-#define VAL_TBL__DIV(id) pgm_read_word(&(val_table[id][2]))
-#define VAL_TBL__UNIT(id) pgm_read_word(&(val_table[id][3]))
+// #define VAL_TBL__MAX(id) pgm_read_word(&(val_table[id][0]))
+// #define VAL_TBL__INC(id) pgm_read_word(&(val_table[id][1]))
+// #define VAL_TBL__DIV(id) pgm_read_word(&(val_table[id][2]))
+// #define VAL_TBL__UNIT(id) pgm_read_word(&(val_table[id][3]))
 
-#define GET_FLOAT_VAL(id) (values[id] / float(VAL_TBL__DIV(id)))
+// #define GET_FLOAT_VAL(id) (values[id] / float(VAL_TBL__DIV(id)))
 
 #define MENU_DATA_ID(menuNb) pgm_read_byte(&(menud[menuNb][0]))
 #define MENU_DATA_TYP(menuNb) pgm_read_byte(&(menud[menuNb][1]))
 #define MENU_DATA_LVL(menuNb) pgm_read_byte(&(menud[menuNb][2]))
-#define MENU_DATA_CALL(menuNb) pgm_read_byte(&(menud[menuNb][3]))
+#define MENU_DATA_LABEL(menuNb) pgm_read_byte(&(menud[menuNb][3]))
+#define MENU_DATA_CALL(menuNb) pgm_read_byte(&(menud[menuNb][4]))
 
-#define ENUM_TABLE__MAX(id) pgm_read_byte(&(enu_table[id][0]))
-#define ENUM_TABLE__TXT(id) pgm_read_byte(&(enu_table[id][1]))
-#define ENU_VAL_CONTECT(id) pgm_read_byte(&(enu_table[id][2]))
-#define SET_ENUM_P(id) \
-    e_p = enu_p + id
+/*
+// #define ENUM_TABLE__MAX(id) pgm_read_byte(&(enu_table[id][0]))
+// #define ENUM_TABLE__TXT(id) pgm_read_byte(&(enu_table[id][1]))
+// #define ENU_VAL_CONTECT(id) pgm_read_byte(&(enu_table[id][2]))
+// #define SET_ENUM_P(id) \
+//     par_p = parameter_p + id
 
-#define ENUM_LABEL(buf, call) \
-    SET_ENUM_P(call);         \
-    GET_TEXT_ID(buf, *e_p + ENUM_TABLE__TXT(call))
-
-#define SET_VALUE_P(id) \
-    v_p = value_p + id
-
+// #define ENUM_LABEL(buf, call) \
+//     SET_ENUM_P(call);         \
+//     GET_TEXT_ID(buf, *e_p + ENUM_TABLE__TXT(call))
+*/
+/*
+// #define SET_VALUE_P(id) \
+//     this->par_p = this->parameter_p + id
+*/
 #define GET_TEXT_ID(buf, id) \
     strcpy_P(buf, (char *)pgm_read_word(&(id_table[id])))
 
@@ -206,42 +239,46 @@ const char ID_32[] PROGMEM = "";
 
 const char *const id_table[] PROGMEM = {ID_00, ID_01, ID_02, ID_03, ID_04, ID_05, ID_06, ID_07, ID_08, ID_09, ID_10, ID_11, ID_12, ID_13, ID_14, ID_15, ID_16, ID_17, ID_18, ID_19, ID_20, ID_21, ID_22, ID_23, ID_24, ID_25, ID_26, ID_27, ID_28, ID_29, ID_30, ID_31, ID_32};
 
-const uint16_t val_table[][4] PROGMEM =
-    {{300, 1, 100, 18},
-     {50, 1, 1000, 19},
-     {200, 1, 100, 20},
-     {350, 1, 1, 29},
-     {120, 1, 1, 30},
-     {5000, 100, 1, 31},
-     {5000, 100, 1, 31},
-     {5000, 100, 1, 31},
-     {500, 1, 100, 32},
-     {500, 1, 100, 32},
-     {500, 1, 100, 32}};
+// const uint16_t val_table[][4] PROGMEM =
+//     {{300, 1, 100, 18},
+//      {50, 1, 1000, 19},
+//      {200, 1, 100, 20},
+//      {350, 1, 1, 29},
+//      {120, 1, 1, 30},
+//      {5000, 100, 1, 31},
+//      {5000, 100, 1, 31},
+//      {5000, 100, 1, 31},
+//      {500, 1, 100, 32},
+//      {500, 1, 100, 32},
+//      {500, 1, 100, 32}};
 
-const uint8_t enu_table[][3] PROGMEM = {{2, 8, 0}, {2, 18, 0}, {1, 23, 0}};
+// const uint8_t enu_table[][3] PROGMEM = {{2, 8, 0}, {2, 18, 0}, {1, 23, 0}};
 
-const uint8_t menud[][4] PROGMEM = {{0, 4, 0, 1},
-                                    {1, 1, 0, 3},
-                                    {2, 0, 0, 1},
-                                    {3, 3, 0, 0},
-                                    {4, 0, 1, 2},
-                                    {5, 0, 1, 3},
-                                    {6, 0, 1, 4},
-                                    {7, 2, 1, 0},
-                                    {11, 1, 1, 4},
-                                    {12, 0, 1, 0},
-                                    {13, 1, 2, 5},
-                                    {14, 1, 2, 6},
-                                    {15, 1, 2, 7},
-                                    {16, 0, 2, 1},
-                                    {17, 2, 2, 1},
-                                    {21, 0, 2, 1},
-                                    {22, 2, 2, 2},
-                                    {25, 1, 2, 8},
-                                    {26, 1, 2, 9},
-                                    {27, 1, 2, 10},
-                                    {28, 0, 2, 1}};
+const uint8_t menud[][5] PROGMEM = {{0, 4, 0, 0, 11}, //predkosc
+                                    {1, 1, 0, 1, 2},  //Dia
+                                    {2, 0, 0, 2, 1},  //Ustawienia
+                                    {3, 3, 0, 3, 0},  //Wyjscie
+                                    //
+                                    {4, 0, 1, 4, 2},
+                                    {5, 0, 1, 5, 3},
+                                    {6, 0, 1, 6, 4},
+                                    {7, 2, 1, 7, 10},
+                                    {11, 1, 1, 11, 3},
+                                    {12, 0, 1, 12, 0},
+                                    //
+                                    {13, 1, 2, 13, 4},
+                                    {14, 1, 2, 14, 5},
+                                    {15, 1, 2, 15, 6},
+                                    {16, 0, 2, 12, 0},
+                                    //
+                                    {17, 2, 2, 17, 11},
+                                    {21, 0, 2, 12, 0},
+                                    //
+                                    {22, 2, 2, 22, 12},
+                                    {25, 1, 2, 25, 7},
+                                    {26, 1, 2, 26, 8},
+                                    {27, 1, 2, 27, 9},
+                                    {28, 0, 2, 12, 0}};
 
 const uint8_t menuSc[][2] PROGMEM = {
     {0, 4},

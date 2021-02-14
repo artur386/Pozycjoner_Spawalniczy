@@ -111,7 +111,7 @@ private:
 public:
     BigFont();
     int WriteBigChar(char ch, byte x, byte y);
-    void WriteBigString(char *str, byte x, byte y);
+    void WriteBigString(char const *str, byte x, byte y);
     void BindLcd(LiquidCrystal_I2C *lcd);
 };
 

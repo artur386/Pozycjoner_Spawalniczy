@@ -8,7 +8,7 @@ DisplayManager::DisplayManager(LiquidCrystal_I2C *_lcd, uint8_t *MotorSt)
     this->LastMotorState = 255;
     this->LastParamDIA = 65000;
     this->LastParamRPM = 999;
-    this->LastParamRPS = 999;
+    // this->LastParamRPS = 999;
     this->LastRealRPM = 99;
     this->LastParamMMSEC = 999;
     // lcd = new LiquidCrystal_I2C(0x27, LCD_ROWS, LCD_COLS); // inicjalizacja wyświetlacza lcd
@@ -17,7 +17,7 @@ DisplayManager::DisplayManager(LiquidCrystal_I2C *_lcd, uint8_t *MotorSt)
 
 void DisplayManager::SetREAL_RPM_P(double *realRpm)
 {
-    REAL_RPM = realRpm;
+    RealRpm = realRpm;
 }
 void DisplayManager::drawMainScreen()
 {
@@ -27,7 +27,7 @@ void DisplayManager::drawMainScreen()
     lcd->print(F(" STA:"));
     lcd->setCursor(0, 1);
     lcd->print(F("READ:"));
-    if (*paramSpeedMethod == 2)
+    if ((*(parameters_p + 11)).val == 1)
     {
         lcd->setCursor(0, 2);
         lcd->print(F(" DIA:"));
@@ -35,6 +35,11 @@ void DisplayManager::drawMainScreen()
     lcd->setCursor(0, 3);
     lcd->print(F(" SET:"));
 }
+void DisplayManager::BindLoadingBar(uint16_t *loadingBar)
+{
+    this->loadingBar = loadingBar;
+}
+
 void DisplayManager::Update_MOT_Status()
 {
     if (this->LastMotorState != *this->MOTOR_STATE)
@@ -43,22 +48,22 @@ void DisplayManager::Update_MOT_Status()
         switch (int(*this->MOTOR_STATE))
         {
         case 0:
-            lcd->print(F("MOTOR STOP  "));
+            lcd->print(F("MOTOR STOP"));
             break;
         case 1:
-            lcd->print(F("PAUSE       "));
+            lcd->print(F("PAUSE IN"));
             break;
         case 2:
-            lcd->print(F("SOFT START  "));
+            lcd->print(F("MOTOR START"));
             break;
         case 3:
-            lcd->print(F("OBR. W PRAWO"));
+            lcd->print(F(" MOTOR CW"));
             break;
         case 4:
-            lcd->print(F("OBR. W LEWO "));
+            lcd->print(F("MOTOR CCW"));
             break;
         case 5:
-            lcd->print(F("SMOOTH STOP "));
+            lcd->print(F("SMOOTH OUT"));
             break;
         case 6:
             lcd->print(F("GO TO STOP  "));
@@ -72,61 +77,59 @@ void DisplayManager::Update_MOT_Status()
 
 void DisplayManager::UpdateSetDIA()
 {
-    if (this->LastParamDIA != *this->paramDIA)
+    if (this->LastParamDIA != (*(parameters_p + 2)).val)
     {
         char *buf = (char *)malloc(sizeof(char) * 7);
-        sprintf(buf, "%3d mm", *this->paramDIA);
+        sprintf(buf, "%3d mm", (*(parameters_p + 2)).val);
         lcd->setCursor(7, 2);
         lcd->print(buf);
         free(buf);
-        this->LastParamDIA = *this->paramDIA;
+        this->LastParamDIA = (*(parameters_p + 2)).val;
     }
 }
-void DisplayManager::BindSpeed(double *paramRPM, double *paramRPS, double *paramMMSEC)
-{
-    this->paramRPM = paramRPM;
-    this->paramRPS = paramRPS;
-    this->paramMMSEC = paramMMSEC;
-}
-void DisplayManager::BindDia(uint32_t *paramDIA)
-{
-    this->paramDIA = paramDIA;
-}
+// void DisplayManager::BindLoadBar(double *paramRPM, double *paramRPS, double *paramMMSEC)
+// {
+//     this->paramRPM = paramRPM;
+//     this->paramRPS = paramRPS;
+//     this->paramMMSEC = paramMMSEC;
+// }
+// void DisplayManager::BindDia(uint32_t *paramDIA)
+// {
+//     this->paramDIA = paramDIA;
+// }
 void DisplayManager::ForceRefresh()
 {
     this->LastMotorState = 255;
     this->LastParamDIA = 65000;
     this->LastParamRPM = 999;
-    this->LastParamRPS = 999;
     this->LastRealRPM = 99;
     this->LastParamMMSEC = 999;
 }
-void DisplayManager::BindSpeedMethod(uint8_t *paramSpeedMethod)
+// void DisplayManager::BindSpeedMethod(uint8_t *paramSpeedMethod)
+// {
+//     this->paramSpeedMethod = paramSpeedMethod;
+// }
+void DisplayManager::BindParameters(Parametr *parameters_p)
 {
-    this->paramSpeedMethod = paramSpeedMethod;
+    this->parameters_p = parameters_p;
 }
 void DisplayManager::DrawRealSPEED()
 {
-    if (this->LastRealRPM != *this->REAL_RPM)
+    if (this->LastRealRPM != *this->RealRpm)
     {
-        this->LastRealRPM = *this->REAL_RPM;
+        this->LastRealRPM = *this->RealRpm;
         char *buf = (char *)malloc(sizeof(char) * 15);
         char *realValCh = (char *)malloc(sizeof(char) * 6);
         char *unit = (char *)malloc(sizeof(char) * 6);
         float val;
-        if (*paramSpeedMethod == 0)
+        if ((*(parameters_p + 11)).val == 0)
         {
-            val = *this->REAL_RPM;
+            val = *this->RealRpm;
             sprintf(unit, "RPM");
         }
-        else if (*paramSpeedMethod == 1)
+        else if ((*(parameters_p + 11)).val == 1)
         {
-            val = *this->REAL_RPM / 60.0f;
-            sprintf(unit, "RPS");
-        }
-        else if (*paramSpeedMethod == 2)
-        {
-            val = M_PER_MIN_to_MM_SEC(RPM_TO_VC(*this->REAL_RPM));
+            val = RPM_TO_MMSEC(*this->RealRpm, (*(parameters_p + 2)).val);
             sprintf(unit, "MM/SEC");
         }
         dtostrf(val, 1, 2, realValCh);
@@ -140,32 +143,31 @@ void DisplayManager::DrawRealSPEED()
 }
 void DisplayManager::UpdateSetSPEED()
 {
-    if (*this->paramRPM != this->LastParamRPM || *this->paramRPS != this->LastParamRPS || *this->paramMMSEC != this->LastParamMMSEC)
+    if ((*(parameters_p)).val != this->LastParamRPM || (*(parameters_p + 1)).val != this->LastParamMMSEC)
     {
         char *buf = (char *)malloc(sizeof(char) * 15);
         char *realValCh = (char *)malloc(sizeof(char) * 6);
         char *unit = (char *)malloc(sizeof(char) * 6);
         float val;
-        this->LastParamRPM = *this->paramRPM;
-        this->LastParamRPS = *this->paramRPS;
-        this->LastParamMMSEC = *this->paramMMSEC;
+        uint8_t prec;
+        this->LastParamRPM = (*(parameters_p + 0)).val;
+        // this->LastParamRPS = *this->paramRPS;
+        this->LastParamMMSEC = (*(parameters_p + 1)).val;
 
-        if (*paramSpeedMethod == 0)
+        if ((*(parameters_p + 11)).val == 0)
         {
-            val = *this->paramRPM;
             sprintf(unit, "RPM");
         }
-        else if (*paramSpeedMethod == 1)
+
+        else if ((*(parameters_p + 11)).val == 1)
         {
-            val = *this->paramRPS;
-            sprintf(unit, "RPS");
-        }
-        else if (*paramSpeedMethod == 2)
-        {
-            val = *this->paramMMSEC;
             sprintf(unit, "MM/SEC");
         }
-        dtostrf(val, 1, 2, realValCh);
+        val = (*(parameters_p + (*(parameters_p + 11)).val)).val;
+        prec = (*(parameters_p + (*(parameters_p + 11)).val)).precision;
+        // DBG(val);
+        // DBG(prec);
+        dtostrf((val / pow(10, prec)), 1, prec, realValCh);
         sprintf(buf, "%5s %s", realValCh, unit);
         lcd->setCursor(7, 3);
         lcd->print(buf);
@@ -187,6 +189,7 @@ void DisplayManager::UpdateCursor()
             lcd->write(0x7E);
         }
         else
+
         {
             lcd->setCursor(5, 2);
             lcd->write(0x7E);
@@ -204,7 +207,7 @@ void DisplayManager::updateScreen()
 
     this->UpdateSetSPEED();
     this->DrawRealSPEED();
-    if (*paramSpeedMethod == 2)
+    if ((*(parameters_p + 11)).val == 1)
     {
         this->UpdateSetDIA();
         this->UpdateCursor();
@@ -218,7 +221,38 @@ void DisplayManager::bindFocus(bool *curFocus)
     this->CursorState = curFocus;
     this->LastCursorState = !(*this->CursorState);
 }
-
+void DisplayManager::DrawLoadingBar(int dc, int y = 1)
+{
+    uint8_t load;
+    if (dc > 100)
+    {
+        dc = 100;
+    }
+    else if (dc < 0)
+    {
+        dc = 0;
+    }
+    load = map(dc, 0, 100, 0, 17);
+    // lcd->setCursor(0, y);
+    // lcd->print(F("                    "));
+    for (size_t i = 3; i < 20; i++)
+    {
+        lcd->setCursor(i, y);
+        if (i <= load + 3)
+        {
+            lcd->write(0xff);
+        }
+        else
+        {
+            lcd->write(0x20);
+        }
+    }
+    char *buf = (char *)malloc(sizeof(char) * 5);
+    sprintf(buf, "%2d%%", dc);
+    lcd->setCursor(0, y);
+    lcd->print(buf);
+    free(buf);
+}
 // void DisplayManager::UpdateTime()
 // {
 //     this->timeold = millis();

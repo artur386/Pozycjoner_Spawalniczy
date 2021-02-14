@@ -1,12 +1,12 @@
 #include "myMenu.h"
 
-myMenu::myMenu(LiquidCrystal_I2C *lcd, int *value_p, uint8_t *enu_p, byte *BT_ST, uint8_t *AppMode)
+myMenu::myMenu(LiquidCrystal_I2C *lcd, Parametr *parameter_p, byte *BT_ST, uint8_t *AppMode)
 {
     this->lcd = lcd;
     this->BT_ST = BT_ST;
     this->AppMode = AppMode;
-    this->value_p = value_p;
-    this->enu_p = enu_p;
+    this->parameter_p = parameter_p;
+    // this->enu_p = enu_p;
     this->cursor = 0;
     this->scroll = 0;
     this->menuIsOn = false;
@@ -95,7 +95,7 @@ void myMenu::PrintLine(uint8_t line)
              *  MENU ITEM                  *
              * ****************************/
     case 0:
-        GET_TEXT_ID(buf, MENU_DATA_ID(MENU_NUMBER(line)));
+        GET_TEXT_ID(buf, MENU_DATA_LABEL(MENU_NUMBER(line)));
         // DBG(buf);
         // DBG("case 0 strlen: ", strlen(buf));
         break;
@@ -104,7 +104,7 @@ void myMenu::PrintLine(uint8_t line)
              *  VALUE                      *
              * ****************************/
     case 1:
-        GetValueLine(buf, MENU_DATA_ID(MENU_NUMBER(line)), MENU_DATA_CALL(MENU_NUMBER(line)));
+        GetValueLine(buf, MENU_DATA_LABEL(MENU_NUMBER(line)), MENU_DATA_CALL(MENU_NUMBER(line)));
         // DBG("case 1: ", buf);
         break;
 
@@ -112,21 +112,21 @@ void myMenu::PrintLine(uint8_t line)
              *  ENUM                       *
              * ****************************/
     case 2:
-        GetEnumLine(buf, MENU_DATA_ID(MENU_NUMBER(line)), MENU_DATA_CALL(MENU_NUMBER(line)));
+        GetEnumLine(buf, MENU_DATA_LABEL(MENU_NUMBER(line)), MENU_DATA_CALL(MENU_NUMBER(line)));
         break;
 
         /*******************************
              *  CALLBACK                   *
              * ****************************/
     case 3:
-        GetCallBackLine(buf, MENU_DATA_ID(MENU_NUMBER(line)));
+        GetCallBackLine(buf, MENU_DATA_LABEL(MENU_NUMBER(line)));
         break;
 
         /*******************************
              *  ENUM VAL                   *
              * ****************************/
     case 4:
-        GetEnumValLine(buf, MENU_DATA_ID(MENU_NUMBER(line)), MENU_DATA_CALL(MENU_NUMBER(line)));
+        GetEnumValLine(buf, MENU_DATA_LABEL(MENU_NUMBER(line)), MENU_DATA_CALL(MENU_NUMBER(line)));
         break;
 
     default:
@@ -145,7 +145,9 @@ void myMenu::PrintLine(uint8_t line)
  ******************************************************************/
 void myMenu::GetMenuItemLine(char *bufOut, uint8_t _id)
 {
+    DBG("GetMenuItemLine START");
     GET_TEXT_ID(bufOut, _id);
+    DBG("GetMenuItemLine END");
 }
 
 /*******************************************************************
@@ -157,25 +159,33 @@ void myMenu::GetMenuItemLine(char *bufOut, uint8_t _id)
  ******************************************************************/
 void myMenu::GetValueLine(char *bufOut, uint8_t _id, uint8_t _call)
 {
+    DBG("GetValueLine START");
     char *leftTxt = (char *)malloc(sizeof(char) * 15);
     char *unit = (char *)malloc(sizeof(char) * 8);
     char *sBuf = (char *)malloc(sizeof(char) * 10);
     char *value = (char *)malloc(sizeof(char) * 11);
 
+    // SET_VALUE_P();
+    // this->par_p = ;
+    // uint32_t val = (*par_p).val;
+    // uint16_t offset = ;
+    // uint32_t maxVal;
+    // uint16_t inc;
+    // uint16_t precision = ;
+    // uint8_t unitNum = ;0
+
     GET_TEXT_ID(leftTxt, _id);
-    GET_TEXT_ID(unit, VAL_TBL__UNIT(_call));
+    GET_TEXT_ID(unit, (*(this->parameter_p + _call)).unitNum);
 
-    uint16_t div = VAL_TBL__DIV(_call);
-
-    SET_VALUE_P(_call);
-
-    if ((bool)div)
+    if ((bool)(*(this->parameter_p + _call)).precision)
     {
-        dtostrf((float(*v_p) / float(div)), 1, 2, value);
+        // DBG("PRINT FLOAT");
+        dtostrf((((*(this->parameter_p + _call)).val + (*(this->parameter_p + _call)).offset) / pow(10, (*(this->parameter_p + _call)).precision)), 1, (*(this->parameter_p + _call)).precision, value);
     }
     else
     {
-        sprintf(value, "%d", *v_p);
+        // DBG("PRINT INT");
+        sprintf(value, "%d", int((*(this->parameter_p + _call)).val + (*(this->parameter_p + _call)).offset));
     }
     sprintf(sBuf, "%%s%%%ds%%s", 19 - strlen(leftTxt) - strlen(unit));
     sprintf(bufOut, sBuf, leftTxt, value, unit);
@@ -185,6 +195,7 @@ void myMenu::GetValueLine(char *bufOut, uint8_t _id, uint8_t _call)
     free(sBuf);
     free(leftTxt);
     free(unit);
+    DBG("GetValueLine END");
 }
 
 /*******************************************************************
@@ -196,18 +207,25 @@ void myMenu::GetValueLine(char *bufOut, uint8_t _id, uint8_t _call)
  ******************************************************************/
 void myMenu::GetEnumLine(char *bufOut, uint8_t id, uint8_t call)
 {
+    DBG("GetEnumLine START");
+    DBG(id);
+    DBG(call);
     char *leftTxt = (char *)malloc(sizeof(char) * 15);
     char *rightTxt = (char *)malloc(sizeof(char) * 8);
     char *sBuf = (char *)malloc(sizeof(char) * 10);
+    // par_p = parameter_p + call;
+    // uint32_t val = (*par_p).val;
+    // uint8_t unitNum = (*par_p).unitNum;
 
     GET_TEXT_ID(leftTxt, id);
-    ENUM_LABEL(rightTxt, call);
+    GET_TEXT_ID(rightTxt, ((*(this->parameter_p + call)).unitNum + (*(this->parameter_p + call)).val));
 
     sprintf(sBuf, "%%s%%%ds", 19 - strlen(leftTxt));
     sprintf(bufOut, sBuf, leftTxt, rightTxt);
     free(leftTxt);
     free(rightTxt);
     free(sBuf);
+    DBG("GetEnumLine END");
 }
 
 /*******************************************************************
@@ -217,7 +235,9 @@ void myMenu::GetEnumLine(char *bufOut, uint8_t id, uint8_t call)
  ******************************************************************/
 void myMenu::GetCallBackLine(char *bufOut, uint8_t _id)
 {
+    DBG("GetCallBackLine START");
     GET_TEXT_ID(bufOut, _id);
+    DBG("GetCallBackLine END");
 }
 
 /*******************************************************************
@@ -230,8 +250,12 @@ void myMenu::GetCallBackLine(char *bufOut, uint8_t _id)
  ***********************    a*******************************************/
 void myMenu::GetEnumValLine(char *bufOut, uint8_t _id, uint8_t call)
 {
-    SET_ENUM_P(call);
-    GetValueLine(bufOut, _id, *e_p + ENU_VAL_CONTECT(call));
+    DBG("GetEnumValLine START");
+    // par_p = parameter_p + call;
+    // uint32_t val = (*par_p).val;
+    // SET_ENUM_P(call);
+    GetValueLine(bufOut, _id, (*(this->parameter_p + call)).val);
+    DBG("GetEnumValLine END");
 }
 
 void myMenu::MenuStart()
@@ -270,7 +294,7 @@ void myMenu::ClearButton(uint8_t btn)
 }
 void myMenu::ClearAllBtn()
 {
-    *this->BT_ST = 0x0;
+    *this->BT_ST = 0x00000000;
 }
 bool myMenu::CheckAnyBtn()
 {
@@ -411,46 +435,36 @@ void myMenu::UpdateMenu()
 
 void myMenu::IncData()
 {
-
+    DBG(MENU_DATA_TYP(MENU_NUMBER(this->cursor)));
+    int pointer;
     switch (MENU_DATA_TYP(MENU_NUMBER(this->cursor)))
     {
         /*******************************
         *  VALUE                      *
         * ****************************/
     case 1:
-        SET_VALUE_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        *v_p = *v_p + VAL_TBL__INC(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        if (*v_p > int(VAL_TBL__MAX(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))))
-        {
-            *v_p = VAL_TBL__MAX(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        }
+        // DBG("CASE 1");
+        pointer = MENU_DATA_CALL(MENU_NUMBER(this->cursor));
         break;
 
         /*******************************
              *  ENUM                       *
              * ****************************/
     case 2:
-        SET_ENUM_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        *e_p = *e_p + 1;
-        if (*e_p > ENUM_TABLE__MAX(MENU_DATA_CALL(MENU_NUMBER(this->cursor))))
-        {
-            *e_p = ENUM_TABLE__MAX(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        }
+        // DBG("CASE 2");
+        pointer = MENU_DATA_CALL(MENU_NUMBER(this->cursor));
+        // SET_VALUE_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
         break;
 
         /*******************************
              *  ENUM VAL                   *
              * ****************************/
     case 4:
-
-        SET_ENUM_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        SET_VALUE_P((*e_p + ENU_VAL_CONTECT(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))));
-
-        *v_p = *v_p + VAL_TBL__INC((*e_p + ENU_VAL_CONTECT(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))));
-        if (*v_p > int(VAL_TBL__MAX((*e_p + ENU_VAL_CONTECT(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))))))
-        {
-            *v_p = VAL_TBL__MAX((*e_p + ENU_VAL_CONTECT(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))));
-        }
+        // DBG("CASE 3");
+        pointer = (*(this->parameter_p + MENU_DATA_CALL(MENU_NUMBER(this->cursor)))).val;
+        // SET_VALUE_P();
+        // DBG((*par_p).val);
+        // SET_VALUE_P((*par_p).val);
         break;
 
     default:
@@ -459,49 +473,58 @@ void myMenu::IncData()
     }
 
     /*****************************************/
+    // *(this->parameter_p + _call).
+    // DBG(par_p->val);
+    // DBG(par_p->inc);
+    // DBG(par_p->maxVal);
+    // DBG(this->cursor);
+    // DBG(pointer);
 
+    // DBG((*(this->parameter_p + pointer)).val + (*(this->parameter_p + pointer)).inc);
+    (*(this->parameter_p + pointer)).val = (*(this->parameter_p + pointer)).val + (*(this->parameter_p + pointer)).inc;
+    if ((*(this->parameter_p + pointer)).val > int((*(this->parameter_p + pointer)).maxVal))
+    {
+        (*(this->parameter_p + pointer)).val = int((*(this->parameter_p + pointer)).maxVal);
+    }
     PrintLine(this->cursor);
+    // DBG((*(this->parameter_p + pointer)).precision);
+    // DBG((*(this->parameter_p + pointer)).val);
+    // DBG((*(this->parameter_p + pointer)).val);
+    // DBG((*(this->parameter_p + pointer)).inc);
+    // DBG((*(this->parameter_p + pointer)).maxVal);
+    // DBG(this->cursor);
 }
 void myMenu::DecData()
 {
+    int pointer;
     switch (MENU_DATA_TYP(MENU_NUMBER(this->cursor)))
     {
         /*******************************
         *  VALUE                      *
         * ****************************/
     case 1:
-        SET_VALUE_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        *v_p = *v_p - VAL_TBL__INC(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        if (*v_p < 0)
-        {
-            *v_p = 0;
-        }
+        // DBG("CASE 1");
+        pointer = MENU_DATA_CALL(MENU_NUMBER(this->cursor));
         break;
 
         /*******************************
              *  ENUM                       *
              * ****************************/
     case 2:
-        SET_ENUM_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        if (*e_p > 0)
-        {
-            *e_p = *e_p - 1;
-        }
+        // DBG("CASE 2");
+        pointer = MENU_DATA_CALL(MENU_NUMBER(this->cursor));
+        // SET_VALUE_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
         break;
 
         /*******************************
              *  ENUM VAL                   *
              * ****************************/
     case 4:
-
-        SET_ENUM_P(MENU_DATA_CALL(MENU_NUMBER(this->cursor)));
-        SET_VALUE_P((*e_p + ENU_VAL_CONTECT(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))));
-
-        *v_p = *v_p - VAL_TBL__INC((*e_p + ENU_VAL_CONTECT(MENU_DATA_CALL(MENU_NUMBER(this->cursor)))));
-        if (*v_p < 0)
-        {
-            *v_p = 0;
-        }
+        // DBG("CASE 3");
+        pointer = (*(this->parameter_p + MENU_DATA_CALL(MENU_NUMBER(this->cursor)))).val;
+        // SET_VALUE_P();
+        // DBG((*par_p).val);
+        // SET_VALUE_P((*par_p).val);
         break;
 
     default:
@@ -510,6 +533,16 @@ void myMenu::DecData()
     }
 
     /*****************************************/
-
+    // DBG(pointer);
+    (*(this->parameter_p + pointer)).val = (*(this->parameter_p + pointer)).val - (*(this->parameter_p + pointer)).inc;
+    if ((*(this->parameter_p + pointer)).val < 0)
+    {
+        // DBG("MIN VAL");
+        (*(this->parameter_p + pointer)).val = 0;
+    }
     PrintLine(this->cursor);
+    //     DBG((*(this->parameter_p + pointer)).val);
+    //     DBG((*(this->parameter_p + pointer)).inc);
+    //     DBG((*(this->parameter_p + pointer)).maxVal);
+    //     DBG(this->cursor);
 }

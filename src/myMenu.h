@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include "enums.h"
+#include "Parametr.h"
 
 #define _LCD_COLS_ 20
 #define _LCD_ROWS_ 4
@@ -14,6 +15,7 @@ private:
     LiquidCrystal_I2C *lcd;
     byte *BT_ST;
     uint8_t *AppMode;
+    Parametr *parameter_p;
 
     uint8_t lastCursor[3] = {0, 0, 0};
     uint8_t lastScroll[3] = {0, 0, 0};
@@ -22,11 +24,8 @@ private:
     uint8_t curMenu, child, scroll, cursor, menuOffset, menuLevel;
     bool menuIsOn, scrollMenu;
 
-    int *value_p, *v_p;
-    uint8_t *enu_p, *e_p;
-
 public:
-    myMenu(LiquidCrystal_I2C *lcd, int *value_p, uint8_t *enu_p, byte *BT_ST, uint8_t *AppMode);
+    myMenu(LiquidCrystal_I2C *lcd, Parametr *parameter_p, byte *BT_ST, uint8_t *AppMode);
     void MenuStart();
     void DrawMenu();
     void MoveUp();
