@@ -2,7 +2,7 @@
 #include "BigFont.h"
 #include "RTClib.h"
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal.h>
 #include <PID_v1.h>
 #include <EEPROM.h>
 #include "enums.h"
@@ -135,6 +135,18 @@ BigFont fontPrinter;
  * ************************************************/
 void setup()
 {
+  pinMode(MOTOR_ENCODER, INPUT);
+  pinMode(ROT_ENC_CLK, INPUT);
+  pinMode(ROT_ENC_DT, INPUT);
+  pinMode(BTN_START_STOP_PANEL, INPUT_PULLUP);
+  pinMode(ROT_ENC_SW, INPUT_PULLUP);
+  pinMode(PWM_DAC, OUTPUT);
+  pinMode(RL_MOTOR_CW, OUTPUT);
+  pinMode(RL_MOTOR_CCW, OUTPUT);
+  pinMode(RL_MOTOR_GEAR, OUTPUT);
+  pinMode(RL_MOTOR_START_STOP, OUTPUT);
+
+  // pinMode(LED, OUTPUT);
   // REV = 0; //  START ALL THE VARIABLES FROM 0
   // Parametr parameters[13];
   BT_ST = 0x00000000;
@@ -143,7 +155,7 @@ void setup()
   CONTROL_START_STOP_LONG_PRESS_DETECT = false;
   CONTROL_ROTARY_SW_LONG_PRESS_DETECT = false;
   CONTROL_ROTARY_SW_prev = HIGH;
-  CONTROL_START_STOP_prev = LOW;
+  CONTROL_START_STOP_prev = HIGH;
   WriteToEEprom_flag = false;
   LastEEpromWriteTime = 0;
   MOTOR_CCW_DIR = false;
@@ -160,7 +172,6 @@ void setup()
   ENC_STATE = 0;
   isrTime = 500;
 
-  READ_RPM = false;
   // tachometer
   lastUpdate = 0;  // for timing display updates
   accumulator = 0; // sum of last 8 revolution times
@@ -178,7 +189,7 @@ void setup()
   Serial.println("start");
   ReadEEpromData();
   lcd.begin(20, 4);
-  // lcd.clear(); // czyszczenie wyświetlacza lcd
+  lcd.clear(); // czyszczenie wyświetlacza lcd
   // lcd.backlight();
   // char testa[] = "test";
   // char *b = &testa[0];
@@ -191,17 +202,11 @@ void setup()
   // motor.SetGears(&enu[0]);
   // motor.BindCCWDir(&MOTOR_CCW_DIR);
 
-  pinMode(MOTOR_ENCODER, INPUT);
-  pinMode(ROT_ENC_CLK, INPUT_PULLUP);
-  pinMode(ROT_ENC_DT, INPUT_PULLUP);
-  pinMode(BTN_START_STOP_PANEL, INPUT_PULLUP);
-  pinMode(LED, OUTPUT);
   AppMode = APP_IDLE_VIEW;
   LastAppMode = 100;
   MOTOR_STATE = MOTOR_STOP;
   LAST_MOTOR_STATE = 100;
   ENC_STATE = 0;
-  READ_RPM = true;
   cursorFocus = 1;
   // pwm = 50;
   PidOnOff = !bool(parameters[12].val);
@@ -215,41 +220,38 @@ void setup()
   // pinMode(D2, OUTPUT);
   // pinMode(D3, OUTPUT);
 
-  PWR_LED_ON;
-  RED_LED_ON();
-  GREEN_LED_OFF();
+  // PWR_LED_ON;
+  // RED_LED_ON();
+  // GREEN_LED_OFF();
   // attachInterrupt(digitalPinToInterrupt(MOTOR_ENCODER), isr, CHANGE); //interrupt pin
   attachInterrupt(digitalPinToInterrupt(ROT_ENC_CLK), read_rotary, CHANGE);
-  CONTROL_ROTARY_SW_press_time = millis();
-  CONTROL_ROTARY_SW_prev = HIGH;
+  // CONTROL_ROTARY_SW_press_time = millis();
+  // CONTROL_ROTARY_SW_prev = HIGH;
 
   Display.SetREAL_RPM_P(&RealRpm);
   Display.bindFocus(&focus);
   Display.BindParameters(&parameters[0]);
   Display.BindLoadingBar(&loadingBar);
 
-  int a,
-      b;
-  for (;;)
-  {
-    a = 0;
-    b = 100;
-    for (int i = a; i < b; i++)
-    {
-      Display.DrawLoadingBar(i, 1);
-      delay(100);
-    }
-    for (int i = b; i > a; i--)
-    {
-      Display.DrawLoadingBar(i, 1);
-      delay(100);
-    }
-  }
+  // int a,
+  //     b;
+  // for (;;)
+  // {
+  //   a = 0;
+  //   b = 100;
+  //   for (int i = a; i < b; i++)
+  //   {
+  //     Display.DrawLoadingBar(i, 1);
+  //     delay(100);
+  //   }
+  //   for (int i = b; i > a; i--)
+  //   {
+  //     Display.DrawLoadingBar(i, 1);
+  //     delay(100);
+  //   }
+  //   break;
+  // }
 
-  // Display.BindLoadBar(&paramRPM, &paramRPS, &paramMMSEC);
-  // Display.BindDia(&paramDIA);
-  // Display.BindSpeedMethod(&paramSpeedMethod);
-  // Display.cutText();
   Timer1.initialize(128); // 40 us = 25 kHz
   Timer1.pwm(PWM_DAC, 0);
   motor.BindTimer1(&Timer1);
@@ -267,9 +269,9 @@ void setup()
 
 void loop()
 {
-
+  // delay(1000);
   LedAccept();
-  Input = RealRpm * 100;
+  // Input = RealRpm * 100;
   controlBtn();
 
   switch (AppMode)

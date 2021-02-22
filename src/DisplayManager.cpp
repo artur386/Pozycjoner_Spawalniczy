@@ -1,6 +1,6 @@
 #include "DisplayManager.h"
 
-DisplayManager::DisplayManager(LiquidCrystal_I2C *_lcd, uint8_t *MotorSt)
+DisplayManager::DisplayManager(LiquidCrystal *_lcd, uint8_t *MotorSt)
 {
     this->lcd = _lcd;
     this->MOTOR_STATE = MotorSt;
@@ -87,16 +87,6 @@ void DisplayManager::UpdateSetDIA()
         this->LastParamDIA = (*(parameters_p + 2)).val;
     }
 }
-// void DisplayManager::BindLoadBar(double *paramRPM, double *paramRPS, double *paramMMSEC)
-// {
-//     this->paramRPM = paramRPM;
-//     this->paramRPS = paramRPS;
-//     this->paramMMSEC = paramMMSEC;
-// }
-// void DisplayManager::BindDia(uint32_t *paramDIA)
-// {
-//     this->paramDIA = paramDIA;
-// }
 void DisplayManager::ForceRefresh()
 {
     this->LastMotorState = 255;
@@ -148,10 +138,7 @@ void DisplayManager::UpdateSetSPEED()
         char *buf = (char *)malloc(sizeof(char) * 15);
         char *realValCh = (char *)malloc(sizeof(char) * 6);
         char *unit = (char *)malloc(sizeof(char) * 6);
-        float val;
-        uint8_t prec;
         this->LastParamRPM = (*(parameters_p + 0)).val;
-        // this->LastParamRPS = *this->paramRPS;
         this->LastParamMMSEC = (*(parameters_p + 1)).val;
 
         if ((*(parameters_p + 11)).val == 0)
@@ -163,11 +150,7 @@ void DisplayManager::UpdateSetSPEED()
         {
             sprintf(unit, "MM/SEC");
         }
-        val = (*(parameters_p + (*(parameters_p + 11)).val)).val;
-        prec = (*(parameters_p + (*(parameters_p + 11)).val)).precision;
-        // DBG(val);
-        // DBG(prec);
-        dtostrf((val / pow(10, prec)), 1, prec, realValCh);
+        dtostrf(((*(parameters_p + (*(parameters_p + 11)).val)).val / pow(10, (*(parameters_p + (*(parameters_p + 11)).val)).precision)), 1, (*(parameters_p + (*(parameters_p + 11)).val)).precision, realValCh);
         sprintf(buf, "%5s %s", realValCh, unit);
         lcd->setCursor(7, 3);
         lcd->print(buf);
@@ -189,7 +172,6 @@ void DisplayManager::UpdateCursor()
             lcd->write(0x7E);
         }
         else
-
         {
             lcd->setCursor(5, 2);
             lcd->write(0x7E);

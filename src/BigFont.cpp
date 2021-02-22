@@ -4,7 +4,7 @@ BigFont::BigFont()
 {
 }
 
-void BigFont::BindLcd(LiquidCrystal_I2C *lcd)
+void BigFont::BindLcd(LiquidCrystal *lcd)
 {
     this->lcd = lcd;
     for (nb = 0; nb < 8; nb++)

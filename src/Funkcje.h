@@ -4,14 +4,14 @@
 #include "enums.h"
 #include "GlobalVariable.h"
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal.h>
 #include "RTClib.h"
 #include <PID_v1.h>
 #include <EEPROM.h>
 #include "BigFont.h"
-#include "AppIdle.h"
-#include "AppMenu.h"
-#include "AppMotor.h"
+// #include "AppIdle.h"
+// #include "AppMenu.h"
+// #include "AppMotor.h"
 
 void SetButton(uint8_t btn);
 void EncWrite(int8_t addVal);
@@ -39,7 +39,7 @@ float MMsecToRpm(float mmSec, int dia);
 double GetCalcParam(uint8_t par);
 // float MMsecToRpm(float mmSec, int dia);
 
-LiquidCrystal_I2C lcd(0x27, 20, 4);
+LiquidCrystal lcd(RS, RW, EN, D4, D5, D6, D7);
 // PID myPID(&RealRpm, &outPWM, &SetRpm, GetCalcParam(7), GetCalcParam(8), GetCalcParam(9), 0);
 DisplayManager Display(&lcd, &MOTOR_STATE);
 Motor motor(RL_MOTOR_CW, RL_MOTOR_CCW, RL_MOTOR_GEAR, RL_MOTOR_START_STOP, PWM_DAC);
@@ -49,18 +49,28 @@ extern BigFont fontPrinter;
 
 /*Funkcje*/
 
+// #define BEBUG_CONTROLL 1
 void controlBtn()
 {
+#ifdef BEBUG_CONTROLL
+    DBGF("CHK BTN");
+    delay(2000);
+    Serial.println(analogRead(ROT_ENC_SW));
+    Serial.println(BTN_SW_ROTATY);
+    Serial.println(analogRead(BTN_START_STOP_PANEL));
+    Serial.println(BTN_START_STOP_TEST);
+#endif // BEBUG_CONTROLL
+
     if (master_count <= -2)
     {
         // check if the button is pressed and the encoder is rotated
         // the button is low active
-        if (BTN_SW_ROTATY == LOW)
+        if (BTN_SW_ROTATY == true)
         {
             // button is pressed
             SetButton(BTN_RIGHT);
             // reset button press time for next detection
-            CONTROL_ROTARY_SW_prev = HIGH;
+            CONTROL_ROTARY_SW_prev = false;
         }
         else
         {
@@ -75,12 +85,12 @@ void controlBtn()
     {
         // check if the button is pressed and the encoder is rotated
         // the button is low active
-        if (BTN_SW_ROTATY == LOW)
+        if (BTN_SW_ROTATY == true)
         {
             // button is pressed
             SetButton(BTN_LEFT);
             // reset button press time for next detection
-            CONTROL_ROTARY_SW_prev = HIGH;
+            CONTROL_ROTARY_SW_prev = false;
         }
         else
         {
@@ -89,29 +99,34 @@ void controlBtn()
         // init encoder for the next step
         EncWrite(-2);
     }
-    else if (BTN_SW_ROTATY == LOW && CONTROL_ROTARY_SW_prev == HIGH)
+    else if (BTN_SW_ROTATY == true && CONTROL_ROTARY_SW_prev == true)
     {
         // check if the button was pressed for a shortly time or a long time
         //CHANGE edge, button pressed, no action
-        CONTROL_ROTARY_SW_prev = LOW;
+        CONTROL_ROTARY_SW_prev = false;
         CONTROL_ROTARY_SW_press_time = millis();
+        CONTROL_ROTARY_SW_LONG_PRESS_DETECT = false;
     }
-    else if (BTN_SW_ROTATY == LOW && CONTROL_ROTARY_SW_prev == LOW)
+    else if (BTN_SW_ROTATY == true && CONTROL_ROTARY_SW_prev == false)
     {
         if ((millis() - CONTROL_ROTARY_SW_press_time) >= CONTROL_button_long_press)
         {
             // long press detected
             if (!CONTROL_ROTARY_SW_LONG_PRESS_DETECT)
             {
+#ifdef BEBUG_CONTROLL
+                DBGF("BTN SW LONG");
+                delay(2000);
+#endif // BEBUG_CONTROLL
                 SetButton(BTN_SW_LONG);
+                CONTROL_ROTARY_SW_LONG_PRESS_DETECT = true;
             }
         }
     }
     // CHANGE edge, button not pressed, check how long was it pressed
-    else if (BTN_SW_ROTATY == HIGH && CONTROL_ROTARY_SW_prev == LOW)
+    else if (BTN_SW_ROTATY == false && CONTROL_ROTARY_SW_prev == false)
     {
-        CONTROL_ROTARY_SW_prev = HIGH;
-        CONTROL_ROTARY_SW_LONG_PRESS_DETECT = false;
+        CONTROL_ROTARY_SW_prev = true;
         // check how long was the button pressed and detect a long press or a short press
         // check long press situation
 
@@ -119,21 +134,31 @@ void controlBtn()
         if ((millis() - CONTROL_ROTARY_SW_press_time) >= CONTROL_button_short_press && (millis() - CONTROL_ROTARY_SW_press_time) <= CONTROL_button_long_press)
         {
             // short press detected
+#ifdef BEBUG_CONTROLL
+            DBGF("BTN SW SHORT");
+            delay(2000);
+#endif // BEBUG_CONTROLL
             SetButton(BTN_SW_SHORT);
         }
     }
-    else if (digitalRead(BTN_START_STOP_PANEL) == HIGH && CONTROL_START_STOP_prev == LOW)
+    else if (BTN_START_STOP_TEST == true && CONTROL_START_STOP_prev == true)
     {
-        CONTROL_START_STOP_prev = HIGH;
+        DBGF("start press");
+        CONTROL_START_STOP_prev = false;
         CONTROL_START_STOP_press_time = millis();
     }
-    else if (digitalRead(BTN_START_STOP_PANEL) == HIGH && CONTROL_START_STOP_prev == HIGH)
+    else if (BTN_START_STOP_TEST == true && CONTROL_START_STOP_prev == false)
     {
+        DBGF("start still press");
         if ((millis() - CONTROL_START_STOP_press_time) >= CONTROL_button_long_press)
         {
             if (!CONTROL_START_STOP_LONG_PRESS_DETECT)
             {
                 CONTROL_START_STOP_LONG_PRESS_DETECT = true;
+#ifdef BEBUG_CONTROLL
+                DBGF("BTN_START_STOP_LONG");
+                delay(2000);
+#endif // BEBUG_CONTROLL
                 SetButton(BTN_START_STOP_LONG);
             }
 
@@ -141,9 +166,10 @@ void controlBtn()
         }
     }
     // CHANGE edge, button not pressed, check how long was it pressed
-    else if (digitalRead(BTN_START_STOP_PANEL) == LOW && CONTROL_START_STOP_prev == HIGH)
+    else if (BTN_START_STOP_TEST == false && CONTROL_START_STOP_prev == false)
     {
-        CONTROL_START_STOP_prev = LOW;
+        DBGF("start reless");
+        CONTROL_START_STOP_prev = true;
         CONTROL_START_STOP_LONG_PRESS_DETECT = false;
         // check how long was the button pressed and detect a long press or a short press
         // check long press situation
@@ -155,7 +181,12 @@ void controlBtn()
         // check short press situation
         if ((millis() - CONTROL_START_STOP_press_time) >= CONTROL_button_short_press && (millis() - CONTROL_START_STOP_press_time) <= CONTROL_button_long_press)
         {
-            // short press detected
+// short press detected
+#ifdef BEBUG_CONTROLL
+
+            DBGF("BTN_START_STOP_SHORT");
+            delay(2000);
+#endif // BEBUG_CONTROLL
             SetButton(BTN_START_STOP_SHORT);
         }
     }
@@ -221,8 +252,8 @@ void LedAccept()
         LedAcceptIsOn = true;
         LedAcceptBlinkLastTime = millis();
         LedAcceptCnt = 0;
-        RED_LED_ON();
-        GREEN_LED_OFF();
+        // RED_LED_ON();
+        // GREEN_LED_OFF();
         if (LedAcceptMode == 0)
         {
             LED_ACCEPT_BLINK_CNT = 3;
@@ -237,14 +268,14 @@ void LedAccept()
         if ((millis() - LedAcceptBlinkLastTime) >= LED_ACCEPT_BLINK_TIME)
         {
             /* code */
-            RED_LED_OFF();
-            digitalWrite(GLED, (LedAcceptCnt % 2));
+            // RED_LED_OFF();
+            digitalWrite(LED, (LedAcceptCnt % 2));
             LedAcceptBlinkLastTime = millis();
             LedAcceptCnt++;
             if (LedAcceptCnt == LED_ACCEPT_BLINK_CNT)
             {
-                RED_LED_ON();
-                GREEN_LED_OFF();
+                // RED_LED_ON();
+                // GREEN_LED_OFF();
                 LedAcceptIsOn = false;
             }
         }
@@ -994,7 +1025,7 @@ void appIdle()
     }
     if (ScreenSaverOn)
     {
-        if ((millis() - ScreenSaverTime) >= (parameters[p_DIA].val * 1000) && !ShowScreenSaver)
+        if ((millis() - ScreenSaverTime) >= uint32_t(parameters[p_DIA].val * 1000) && !ShowScreenSaver)
         {
             ShowScreenSaver = true;
             lcd.clear();

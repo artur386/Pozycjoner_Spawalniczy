@@ -5,7 +5,7 @@
 
 #include <avr/pgmspace.h> // for memory storage in program space
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h> // library for I@C interface
+#include <LiquidCrystal.h> // library for I@C interface
 const char custom[][8] PROGMEM = {
     // Custom character definitions
     {0x1F, 0x1F, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00}, // char 1
@@ -104,7 +104,7 @@ const unsigned char bigChars[][8] PROGMEM = {
 class BigFont
 {
 private:
-    LiquidCrystal_I2C *lcd;
+    LiquidCrystal *lcd;
     byte col, row, nb = 0, bc = 0; // general
     byte bb[8];                    // byte buffer for reading from PROGMEM
 
@@ -112,7 +112,7 @@ public:
     BigFont();
     int WriteBigChar(char ch, byte x, byte y);
     void WriteBigString(char const *str, byte x, byte y);
-    void BindLcd(LiquidCrystal_I2C *lcd);
+    void BindLcd(LiquidCrystal *lcd);
 };
 
 #endif // !BIG_FONT_H

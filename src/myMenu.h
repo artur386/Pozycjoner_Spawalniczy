@@ -2,7 +2,8 @@
 #define MYMYNU_H
 #include "Arduino.h"
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+
+#include <LiquidCrystal.h>
 #include "enums.h"
 #include "Parametr.h"
 
@@ -12,7 +13,7 @@
 class myMenu
 {
 private:
-    LiquidCrystal_I2C *lcd;
+    LiquidCrystal *lcd;
     byte *BT_ST;
     uint8_t *AppMode;
     Parametr *parameter_p;
@@ -25,7 +26,7 @@ private:
     bool menuIsOn, scrollMenu;
 
 public:
-    myMenu(LiquidCrystal_I2C *lcd, Parametr *parameter_p, byte *BT_ST, uint8_t *AppMode);
+    myMenu(LiquidCrystal *lcd, Parametr *parameter_p, byte *BT_ST, uint8_t *AppMode);
     void MenuStart();
     void DrawMenu();
     void MoveUp();

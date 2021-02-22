@@ -5,7 +5,7 @@
 
 // #include "MenuItem.h"
 #include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal.h>
 #include "enums.h"
 #include "Parametr.h"
 
@@ -13,7 +13,7 @@
 class DisplayManager
 {
 private:
-    LiquidCrystal_I2C *lcd;
+    LiquidCrystal *lcd;
     uint8_t *GEAR;
     uint16_t refreshTime = 1000;
     double *RealRpm, LastRealRPM;
@@ -32,7 +32,7 @@ private:
 
 public:
     //void init();
-    DisplayManager(LiquidCrystal_I2C *_lcd, uint8_t *motorState);
+    DisplayManager(LiquidCrystal *_lcd, uint8_t *motorState);
     void SetREAL_RPM_P(double *realRpm);
     void BindParameters(Parametr *parameters_p);
     void BindLoadingBar(uint16_t *loadingBar);

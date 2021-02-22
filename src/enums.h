@@ -2,10 +2,34 @@
 #define ENUMS_H
 #include <avr/pgmspace.h>
 // relay motor pins:
-#define RL_MOTOR_CW A7
-#define RL_MOTOR_CCW A3
-#define RL_MOTOR_GEAR A6
-#define RL_MOTOR_START_STOP A0
+#define RL_MOTOR_CW 5
+#define RL_MOTOR_CCW 6
+#define RL_MOTOR_GEAR 7
+#define RL_MOTOR_START_STOP 8
+
+#define RS 10
+#define RW 11
+#define EN 12
+#define D4 A0
+#define D5 A1
+#define D6 A2
+#define D7 A3
+
+#define LED 13
+
+// rotary encoder
+#define ROT_ENC_CLK 3 // PIN A
+#define ROT_ENC_DT 4  // Pin B
+#define ROT_ENC_SW A6 // Switch
+
+// PRZYCISK START/STOP
+#define BTN_START_STOP_PANEL A7 //switch on front panel
+
+// MOTOR INC ENCODER
+#define MOTOR_ENCODER 2
+
+// pwm pin
+#define PWM_DAC 9
 
 #define SAMPLE_TIME 100
 #define LED_ACCEPT_BLINK_TIME 100
@@ -15,38 +39,27 @@
 // #define GET_FLOAT_VARIABLE(x) float(GET_INT_VARIABLE(x) / GET_DIV_VARIABLE(x))
 
 #define testDT ((PIND >> ROT_ENC_DT) & 1)
-#define BTN_START_STOP_TEST !((PIND >> BTN_START_STOP_PANEL) & 1)
-#define BTN_SW_ROTATY ((PIND >> ROT_ENC_SW) & 1)
+// #define BTN_START_STOP_TEST !((PIND >> BTN_START_STOP_PANEL) & 1)
+#define BTN_SW_ROTATY ((analogRead(ROT_ENC_SW) < 500) ? true : false)
 
-// pwm pin
-#define PWM_DAC 9
-
-// MOTOR INC ENCODER
-#define MOTOR_ENCODER 2
+#define BTN_START_STOP_TEST ((analogRead(BTN_START_STOP_PANEL) > 500) ? true : false)
+// #define BTN_SW_ROTATY ((PIND >> ROT_ENC_SW) & 1)
 
 // led
-#define LED 13
-#define RLED A2
-#define GLED A1
+// #define RLED A2
+// #define GLED A1
 
 /*inputs*/
-// rotary encoder
-#define ROT_ENC_CLK 3 // PIN A
-#define ROT_ENC_DT 4  // Pin B
-#define ROT_ENC_SW 6  // Switch
-
-// PRZYCISK START/STOP
-#define BTN_START_STOP_PANEL 7 //switch on front panel
 
 // LEDS
 
-#define RS 0
-#define RW 1
-#define EN 5
-#define D0 8
-#define D1 10
-#define D2 11
-#define D3 12
+// #define RS 0
+// #define RW 1
+// #define EN 5
+// #define D0 8
+// #define D1 10
+// #define D2 11
+// #define D3 12
 /**************************************
  * declaration enum etc:
  * ************************************/
@@ -143,15 +156,15 @@ enum ParameterName
 #define RPM_TO_MMSEC(rpm, dia) ((PI * (dia / 1000.0) * (rpm / 60)) / 1000.0f)
 #define MMSEC_TO_RPM(mmsec, dia) (((mmsec * 0.0166) * 1000.0f) / (PI * dia))
 
-#define RED_LED_ON() digitalWrite(RLED, HIGH)
-#define RED_LED_OFF() digitalWrite(RLED, LOW)
-#define RED_LED_TOGGLE() digitalWrite(RLED, !digitalRead(RLED);
-#define GREEN_LED_ON() digitalWrite(GLED, HIGH)
-#define GREEN_LED_OFF() digitalWrite(GLED, LOW)
-#define GREEN_LED_TOGGLE() digitalWrite(GLED, !(bool)digitalRead(GLED))
-#define PWR_LED_ON digitalWrite(LED, HIGH)
-#define PWR_LED_OFF digitalWrite(LED, LOW)
-#define PWR_LED_CHANGE digitalWrite(LED, !digitalRead(LED))
+// #define RED_LED_ON() digitalWrite(RLED, HIGH)
+// #define RED_LED_OFF() digitalWrite(RLED, LOW)
+#define LED_TOGGLE() digitalWrite(LED, !digitalRead(LED);
+// #define GREEN_LED_ON() digitalWrite(GLED, HIGH)
+// #define GREEN_LED_OFF() digitalWrite(GLED, LOW)
+// #define GREEN_LED_TOGGLE() digitalWrite(GLED, !(bool)digitalRead(GLED))
+// #define PWR_LED_ON digitalWrite(LED, HIGH)
+// #define PWR_LED_OFF digitalWrite(LED, LOW)
+// #define PWR_LED_CHANGE digitalWrite(LED, !digitalRead(LED))
 
 #define MOTOR_CW_START()             \
     digitalWrite(RL_MOTOR_CCW, LOW); \

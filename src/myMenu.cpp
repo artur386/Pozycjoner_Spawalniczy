@@ -1,6 +1,6 @@
 #include "myMenu.h"
 
-myMenu::myMenu(LiquidCrystal_I2C *lcd, Parametr *parameter_p, byte *BT_ST, uint8_t *AppMode)
+myMenu::myMenu(LiquidCrystal *lcd, Parametr *parameter_p, byte *BT_ST, uint8_t *AppMode)
 {
     this->lcd = lcd;
     this->BT_ST = BT_ST;
